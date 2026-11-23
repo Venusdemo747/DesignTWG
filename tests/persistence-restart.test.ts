@@ -10,10 +10,12 @@ describe("Persistence & Server Restart Verification", () => {
   const testDbDir = path.resolve(process.cwd(), "data", "test-restart-db");
 
   beforeAll(() => {
+    process.env.AUTH_DEV_MODE = "true";
     fs.mkdirSync(testDbDir, { recursive: true });
   });
 
   afterAll(async () => {
+    delete process.env.AUTH_DEV_MODE;
     await resetDatabaseClient();
     try {
       fs.rmSync(testDbDir, { recursive: true, force: true });
@@ -35,10 +37,22 @@ describe("Persistence & Server Restart Verification", () => {
       const server1 = new IntegrationDemoServer();
       const port1 = await server1.listen(0, "127.0.0.1");
 
+      // Obtain auth token for Admin role
+      const login1Res = await fetch(`http://127.0.0.1:${port1}/api/auth/dev-login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "Admin" }),
+      });
+      const login1Data = (await login1Res.json()) as { token: string };
+      const token1 = login1Data.token;
+
       // Import customers via CSV API
       const importRes = await fetch(`http://127.0.0.1:${port1}/api/ingestion/import`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token1}`,
+        },
         body: JSON.stringify({
           entityType: "customers",
           csvContent: CSV_TEMPLATES.customers,
@@ -52,11 +66,14 @@ describe("Persistence & Server Restart Verification", () => {
       // Trigger deal-won transfer sync
       const syncRes = await fetch(`http://127.0.0.1:${port1}/api/sync/deal-won`, {
         method: "POST",
+        headers: { Authorization: `Bearer ${token1}` },
       });
       expect(syncRes.status).toBe(200);
 
       // Verify Server 1 counts
-      const counts1Res = await fetch(`http://127.0.0.1:${port1}/api/ingestion/registry/counts`);
+      const counts1Res = await fetch(`http://127.0.0.1:${port1}/api/ingestion/registry/counts`, {
+        headers: { Authorization: `Bearer ${token1}` },
+      });
       const counts1 = (await counts1Res.json()) as Record<string, { total: number; csvImported: number }>;
       expect(counts1.customers.csvImported).toBe(importData.importedCount);
 
@@ -71,14 +88,26 @@ describe("Persistence & Server Restart Verification", () => {
       const server2 = new IntegrationDemoServer();
       const port2 = await server2.listen(0, "127.0.0.1");
 
+      const login2Res = await fetch(`http://127.0.0.1:${port2}/api/auth/dev-login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "Admin" }),
+      });
+      const login2Data = (await login2Res.json()) as { token: string };
+      const token2 = login2Data.token;
+
       // Verify registry record counts match after restart
-      const counts2Res = await fetch(`http://127.0.0.1:${port2}/api/ingestion/registry/counts`);
+      const counts2Res = await fetch(`http://127.0.0.1:${port2}/api/ingestion/registry/counts`, {
+        headers: { Authorization: `Bearer ${token2}` },
+      });
       const counts2 = (await counts2Res.json()) as Record<string, { total: number; csvImported: number }>;
       expect(counts2.customers.csvImported).toBe(counts1.customers.csvImported);
       expect(counts2.customers.total).toBe(counts1.customers.total);
 
       // Verify transfer history was preserved across restart
-      const trans2Res = await fetch(`http://127.0.0.1:${port2}/api/transfers`);
+      const trans2Res = await fetch(`http://127.0.0.1:${port2}/api/transfers`, {
+        headers: { Authorization: `Bearer ${token2}` },
+      });
       const transfers2 = (await trans2Res.json()) as Array<{ trigger: string; status: string }>;
       expect(transfers2.length).toBeGreaterThan(0);
       expect(transfers2.some((t) => t.trigger.includes("Deals.Closed_Won"))).toBe(true);

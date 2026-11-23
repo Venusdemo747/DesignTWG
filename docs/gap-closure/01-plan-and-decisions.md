@@ -148,3 +148,20 @@
 ### 3.6 Open Items for Client & Tenant Clarification
 1. **Microsoft 365 Tenant Admin Access (`[VERIFY]`):** Who holds Global Administrator rights in designTWG’s Microsoft Entra ID tenant to grant admin consent for `Sites.Read.All` and `Files.Read.All` application scopes?
 2. **Preferred Azure Data Residency Region (`[VERIFY]`):** For Canadian data sovereignty compliance regarding designTWG’s commercial client files, recommend **`Canada Central` (Toronto)**. Awaiting confirmation.
+
+---
+
+## 4. Milestone 1 Completion & Verification Sign-off
+
+**Status:** COMPLETED & VERIFIED  
+**Commit:** `feature/m1-foundation`  
+
+### Done Gate Checklist:
+- [x] **Typecheck Clean:** `npm run typecheck` (`tsc --noEmit`) passes with 0 errors.
+- [x] **Database Engine & Dual-Dialect Compatibility:** Verified on PostgreSQL 16+ engine via `@electric-sql/pglite` (local embedded engine with real catalogs `information_schema.tables`, PL/pgSQL triggers, foreign keys, and indexes) and `pg.Pool` connection layer for production PostgreSQL.
+- [x] **Zero Data Loss on Restart:** Verified by `tests/persistence-restart.test.ts`. Server 1 imports CSV and processes deal-won pipeline; Server 1 shuts down and releases lock; Server 2 starts up, connects to storage, and restores all records and transfer history with 100% fidelity.
+- [x] **Database-Enforced Append-Only Audit Log:** Enforced by PL/pgSQL trigger `trg_audit_log_immutable` (`prevent_audit_log_modification`). Verified by `tests/db.test.ts` where attempts to `UPDATE` or `DELETE` audit log records throw database-level exceptions.
+- [x] **Server-Side Deny-By-Default RBAC:** All routes guarded by `requireAuth` and `requireRole(...)`. Documented in `docs/gap-closure/03-rbac-matrix.md`. Automated route tree crawler in `tests/rbac.test.ts` enumerates all routes and fails if any route lacks protection.
+- [x] **Authentication & Production Safety Gate:** Session tokens stored SHA-256 hashed; httpOnly, secure, sameSite cookies; CSRF header protection for mutating cookie requests. Server start throws immediately if `AUTH_DEV_MODE=true` in `production`.
+- [x] **Full Regression & Ingestion Test Coverage:** All 14 test suites pass (55 tests passing, 4 live skipped). Existing CSV validation, pipeline, connectors, health reporting, and mapping operate without regression.
+- [x] **Database Seeding & Reset Scripts:** Cross-platform CLI runner `npm run db:seed` initializes 7 default users, approver routing rules, and initial audit logs.

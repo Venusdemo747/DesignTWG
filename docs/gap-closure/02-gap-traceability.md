@@ -44,3 +44,20 @@
 | **X02** | Historical proposals, costs, and decisions underused | Repeated work and inconsistent pricing | **M6** | Proposal & Pricing Agent (Precedent Database) | Planned |
 | **X03** | Performance reporting is mainly retrospective | Delayed intervention on cash, schedule, and margins | **M4** + **M6** | Predictive Runway & Schedule Slippage Alerts | Planned |
 | **X04** | Routine exceptions require disproportionate CEO involvement | Less time for strategic growth and leadership | **M3** + **M4** | Delegated Human-in-the-Loop Approval Routing | Planned |
+
+---
+
+## 4. Section 6 Deficits & Foundation Milestone (M1 Foundation)
+
+| Foundation Deficit | Required Capability | Implementation Component | Status |
+| :--- | :--- | :--- | :--- |
+| **In-Memory Storage Loss** | Persistent database with zero data loss on restart | Dual-dialect async repository (`IDatabaseClient`, `PostgresEntityRepository`, PGlite / PostgreSQL 16+) | **DONE** (Verified) |
+| **Missing Schema Migrations** | Versioned migration engine with automated DDL execution | `DatabaseMigrator`, `001_initial_schema.sql` (13 core tables) | **DONE** (Verified) |
+| **Zero Authentication** | Session token hashing, secure cookies, CSRF protection, Entra ID interface | `IAuthProvider`, `DevAuthProvider`, `createAuthMiddleware`, `csrfProtection` | **DONE** (Verified) |
+| **Production Safety Gate** | Prohibit dev login or insecure bypass in production | `assertProductionAuthSafety()`, throws immediately if `AUTH_DEV_MODE=true` in `production` | **DONE** (Verified) |
+| **Missing RBAC** | Server-side deny-by-default role authorization on all routes | `requireAuth`, `requireRole(...)`, 7 roles (Executive, Sales Lead, Project Manager, Designer, Finance, Admin, Viewer) | **DONE** (Verified) |
+| **Audit Log Tampering Risk** | Append-only audit log enforced at database level | PL/pgSQL trigger `trg_audit_log_immutable` blocking `UPDATE` and `DELETE` | **DONE** (Verified) |
+| **PII & Secret Leakage Risk** | Automated redaction of sensitive credentials and PII | `redactSensitiveData()` regex/key filter on repository and logger | **DONE** (Verified) |
+| **Seeding & Reset Support** | Cross-platform seed script for default roles, rules, and records | `npm run db:seed` (`runDatabaseSeed()`) | **DONE** (Verified) |
+| **Express Middleware Security** | Helmet headers, rate limiting (200 req/min), 2MB body limit | Express 5.3.0 server configuration with comprehensive error handling | **DONE** (Verified) |
+| **Automated Route Guard Audit** | Test verifying zero unprotected endpoints exist | `tests/rbac.test.ts` dynamic route tree crawler | **DONE** (Verified) |
