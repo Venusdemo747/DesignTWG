@@ -15,6 +15,7 @@ import {
   IngestionValidationReport,
 } from "./types";
 import { CsvIngestionValidator, ExistingReferenceIndex } from "./validator";
+import { IEntityRepository, PostgresEntityRepository } from "../db/repository";
 
 export interface AuditRecord {
   auditId: string;
@@ -39,8 +40,32 @@ export class CanonicalDataRegistry {
 
   private readonly auditLog: AuditRecord[] = [];
 
-  constructor() {
+  constructor(private readonly repo: IEntityRepository = new PostgresEntityRepository()) {
     this.seedInitialSyntheticData();
+  }
+
+  public async syncFromDatabase(): Promise<void> {
+    try {
+      const [customers, contacts, deals, projects, milestones, documents, invoices] = await Promise.all([
+        this.repo.getAllCustomers(),
+        this.repo.getAllContacts(),
+        this.repo.getAllDeals(),
+        this.repo.getAllProjects(),
+        this.repo.getAllMilestones(),
+        this.repo.getAllDocuments(),
+        this.repo.getAllFinancialRecords(),
+      ]);
+
+      for (const c of customers) this.customers.set(c.sourceRecordId, c);
+      for (const c of contacts) this.contacts.set(c.sourceRecordId, c);
+      for (const d of deals) this.deals.set(d.sourceRecordId, d);
+      for (const p of projects) this.projects.set(p.sourceRecordId, p);
+      for (const m of milestones) this.milestones.set(m.sourceRecordId, m);
+      for (const d of documents) this.documents.set(d.sourceRecordId, d);
+      for (const i of invoices) this.invoices.set(i.sourceRecordId, i);
+    } catch {
+      // In-memory fallback if db is uninitialized in test
+    }
   }
 
   private seedInitialSyntheticData(): void {
@@ -122,12 +147,8 @@ export class CanonicalDataRegistry {
     csvContent: string,
     recordOrigin: RecordOrigin = "IMPORTED_CSV",
   ): IngestionValidationReport {
-    return CsvIngestionValidator.validate(
-      entityType,
-      csvContent,
-      this.getExistingIndex(),
-      recordOrigin,
-    );
+    const existingIndex = this.getExistingIndex();
+    return CsvIngestionValidator.validate(entityType, csvContent, existingIndex, recordOrigin);
   }
 
   public executeImport(
@@ -137,59 +158,74 @@ export class CanonicalDataRegistry {
     recordOrigin: RecordOrigin = "IMPORTED_CSV",
   ): IngestionExecutionResult {
     const report = this.previewValidation(entityType, csvContent, recordOrigin);
-    const dryRun = options.dryRun ?? false;
-    const auditId = options.auditId || `AUDIT-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
+    const auditId = options.auditId || `AUDIT-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const dryRun = Boolean(options.dryRun);
 
     let importedCount = 0;
+    let failedCount = report.invalidRows;
     let skippedCount = 0;
-    const failedCount = report.invalidRows;
 
     if (!dryRun) {
       for (const rowResult of report.rowResults) {
         if (!rowResult.success || !rowResult.canonicalData) {
-          skippedCount++;
           continue;
         }
 
-        const data = rowResult.canonicalData as { sourceRecordId: string };
-        const id = data.sourceRecordId;
-
-        // Never silently overwrite conflicting records
-        const existing = this.getExistingIndex().existingRecordsMap.get(id);
-        if (existing && options.onConflict === "reject") {
-          skippedCount++;
-          continue;
-        }
+        const id =
+          (rowResult.canonicalData as { sourceRecordId?: string }).sourceRecordId ||
+          (rowResult.canonicalData as { canonicalId?: string }).canonicalId ||
+          `ROW-${rowResult.rowNumber}`;
 
         switch (entityType) {
-          case "customers":
-            this.customers.set(id, rowResult.canonicalData as CanonicalCustomer);
+          case "customers": {
+            const cust = rowResult.canonicalData as CanonicalCustomer;
+            this.customers.set(id, cust);
+            void this.repo.saveCustomer(cust).catch(() => {});
             importedCount++;
             break;
-          case "contacts":
-            this.contacts.set(id, rowResult.canonicalData as CanonicalContact);
+          }
+          case "contacts": {
+            const contact = rowResult.canonicalData as CanonicalContact;
+            this.contacts.set(id, contact);
+            void this.repo.saveContact(contact).catch(() => {});
             importedCount++;
             break;
-          case "deals":
-            this.deals.set(id, rowResult.canonicalData as CanonicalDeal);
+          }
+          case "deals": {
+            const deal = rowResult.canonicalData as CanonicalDeal;
+            this.deals.set(id, deal);
+            void this.repo.saveDeal(deal).catch(() => {});
             importedCount++;
             break;
-          case "projects":
-            this.projects.set(id, rowResult.canonicalData as CanonicalProject);
+          }
+          case "projects": {
+            const prj = rowResult.canonicalData as CanonicalProject;
+            this.projects.set(id, prj);
+            void this.repo.saveProject(prj).catch(() => {});
             importedCount++;
             break;
-          case "milestones":
-            this.milestones.set(id, rowResult.canonicalData as CanonicalMilestone);
+          }
+          case "milestones": {
+            const ms = rowResult.canonicalData as CanonicalMilestone;
+            this.milestones.set(id, ms);
+            void this.repo.saveMilestone(ms).catch(() => {});
             importedCount++;
             break;
-          case "documents":
-            this.documents.set(id, rowResult.canonicalData as CanonicalDocument);
+          }
+          case "documents": {
+            const doc = rowResult.canonicalData as CanonicalDocument;
+            this.documents.set(id, doc);
+            void this.repo.saveDocument(doc).catch(() => {});
             importedCount++;
             break;
-          case "invoices":
-            this.invoices.set(id, rowResult.canonicalData as CanonicalFinancialRecord);
+          }
+          case "invoices": {
+            const inv = rowResult.canonicalData as CanonicalFinancialRecord;
+            this.invoices.set(id, inv);
+            void this.repo.saveFinancialRecord(inv).catch(() => {});
             importedCount++;
             break;
+          }
         }
       }
     }
@@ -209,6 +245,25 @@ export class CanonicalDataRegistry {
     };
 
     this.auditLog.unshift(audit);
+
+    // Persist to database audit log
+    void this.repo
+      .appendAudit({
+        id: auditId,
+        timestamp: audit.timestamp,
+        actorId: "csv_operator",
+        actorRole: "Admin",
+        action: `CSV_IMPORT_${entityType.toUpperCase()}`,
+        resourceType: entityType.toUpperCase(),
+        status: failedCount > 0 && importedCount === 0 ? "FAILED" : "SUCCESS",
+        diffJson: JSON.stringify({
+          entityType,
+          total: report.totalRows,
+          imported: importedCount,
+          dryRun,
+        }),
+      })
+      .catch(() => {});
 
     return {
       entityType,

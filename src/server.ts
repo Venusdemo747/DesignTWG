@@ -275,13 +275,19 @@ export class IntegrationDemoServer {
     });
   }
 
+  public async init(): Promise<void> {
+    await this.registry.syncFromDatabase();
+    await this.transfer.syncFromDatabase();
+  }
+
   public createServer(): http.Server {
     const server = http.createServer(this.app);
     this.server = server;
     return server;
   }
 
-  public listen(port = 3027, host = "127.0.0.1"): Promise<number> {
+  public async listen(port = 3027, host = "127.0.0.1"): Promise<number> {
+    await this.init();
     return new Promise((resolve, reject) => {
       const server = this.createServer();
       server.listen(port, host, () => {

@@ -4,6 +4,7 @@ import { ZohoProjectsConnector } from "../connectors/zoho-projects";
 import { QuickBooksConnector } from "../connectors/quickbooks";
 import { Microsoft365Connector } from "../connectors/microsoft-365";
 import { DataMappingService } from "../mapping";
+import { IEntityRepository, PostgresEntityRepository } from "../db/repository";
 
 export type TransferStatus = "SUCCESS" | "IN_PROGRESS" | "FAILED" | "RETRY_QUEUED";
 
@@ -118,7 +119,52 @@ export class TransferMonitor {
     private readonly qbo: QuickBooksConnector,
     private readonly m365: Microsoft365Connector,
     private readonly mapper: DataMappingService,
+    private readonly repo: IEntityRepository = new PostgresEntityRepository(),
   ) {}
+
+  public async syncFromDatabase(): Promise<void> {
+    try {
+      const persisted = await this.repo.getTransfers(100);
+      for (const p of persisted) {
+        if (!this.transfers.some((t) => t.id === p.transferId)) {
+          this.transfers.unshift({
+            id: p.transferId,
+            timestamp: p.timestamp,
+            trigger: p.trigger,
+            sourceSystem: p.sourceSystem as SystemId,
+            targetSystem: p.targetSystem as SystemId,
+            entityType: p.recordReference,
+            recordId: p.recordReference,
+            recordLabel: p.recordReference,
+            status: p.status === "SUCCESS" ? "SUCCESS" : "FAILED",
+            durationMs: p.latencyMs,
+            retryCount: 0,
+            details: p.details || "",
+            payload: {},
+          });
+        }
+      }
+    } catch {
+      // In-memory fallback
+    }
+  }
+
+  private addTransfer(t: TransferEvent): void {
+    this.transfers.unshift(t);
+    void this.repo
+      .saveTransfer({
+        transferId: t.id,
+        trigger: t.trigger,
+        sourceSystem: t.sourceSystem,
+        targetSystem: t.targetSystem,
+        recordReference: t.recordLabel,
+        status: t.status === "SUCCESS" ? "SUCCESS" : t.status === "FAILED" ? "FAILED" : "PENDING",
+        latencyMs: t.durationMs,
+        details: t.details,
+        timestamp: t.timestamp,
+      })
+      .catch(() => {});
+  }
 
   public getTransfers(): TransferEvent[] {
     return [...this.transfers];
@@ -164,7 +210,7 @@ export class TransferMonitor {
       billingType: deal.billingType,
     });
 
-    this.transfers.unshift({
+    this.addTransfer({
       id: `TRX-${Date.now()}-1`,
       timestamp: new Date().toISOString(),
       trigger: "Simulated Webhook: Deals.Closed_Won",
@@ -182,7 +228,7 @@ export class TransferMonitor {
 
     // 2. Provision Customer in QBO
     const customer = await this.qbo.findOrCreateCustomer(deal.accountName, deal.contactEmail);
-    this.transfers.unshift({
+    this.addTransfer({
       id: `TRX-${Date.now()}-2`,
       timestamp: new Date().toISOString(),
       trigger: "Event: Project Provisioned",
@@ -200,7 +246,7 @@ export class TransferMonitor {
 
     // 3. Provision SharePoint Dossier
     const spFolder = await this.m365.provisionSharePointProjectDossier(project.projectName, deal.accountName);
-    this.transfers.unshift({
+    this.addTransfer({
       id: `TRX-${Date.now()}-3`,
       timestamp: new Date().toISOString(),
       trigger: "Event: Project Provisioned",
@@ -225,7 +271,7 @@ export class TransferMonitor {
       metadata: { dealId: deal.id, projectId: project.id, amount: deal.amount },
     });
 
-    this.transfers.unshift({
+    this.addTransfer({
       id: `TRX-${Date.now()}-4`,
       timestamp: new Date().toISOString(),
       trigger: "Event: Pipeline Sync Complete",
@@ -277,7 +323,7 @@ export class TransferMonitor {
       amount: targetMilestone.billableAmount,
     });
 
-    this.transfers.unshift({
+    this.addTransfer({
       id: `TRX-${Date.now()}-5`,
       timestamp: new Date().toISOString(),
       trigger: "Zoho Projects Milestone Status: Completed",
@@ -315,7 +361,7 @@ export class TransferMonitor {
 
     const updated = await this.qbo.markInvoicePaid(sentInvoice.id);
 
-    this.transfers.unshift({
+    this.addTransfer({
       id: `TRX-${Date.now()}-6`,
       timestamp: new Date().toISOString(),
       trigger: "QuickBooks Webhook: Invoice.PaymentReceived",
@@ -363,7 +409,7 @@ export class TransferMonitor {
       payload: { retryAfterSeconds: 5, attempt: 1 },
     };
 
-    this.transfers.unshift(faultEvent);
+    this.addTransfer(faultEvent);
 
     // Auto-resolve after a slight delay
     setTimeout(() => {
