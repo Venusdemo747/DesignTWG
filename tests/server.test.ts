@@ -81,4 +81,21 @@ describe("Integration Demo Server API", () => {
     expect(data.project).toBeDefined();
     expect(data.customer).toBeDefined();
   });
+
+  it("enforces Helmet security headers on responses", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/health`);
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("x-dns-prefetch-control")).toBe("off");
+  });
+
+  it("enforces 2MB body size limit with 413 Payload Too Large", async () => {
+    const largePayload = JSON.stringify({ data: "x".repeat(2.5 * 1024 * 1024) });
+    const res = await fetch(`http://127.0.0.1:${port}/api/ingestion/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: largePayload,
+    });
+    expect(res.status).toBe(413);
+  });
 });
+
