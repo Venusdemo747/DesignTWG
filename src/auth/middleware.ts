@@ -39,8 +39,9 @@ export function createAuthMiddleware(authProvider: IAuthProvider = new DevAuthPr
         req.user = user;
       }
       next();
-    } catch (err) {
-      next(err);
+    } catch {
+      // If authentication token is invalid or lookup fails, treat as unauthenticated
+      next();
     }
   };
 }

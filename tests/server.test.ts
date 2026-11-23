@@ -4,12 +4,23 @@ import { IntegrationDemoServer } from "../src/server";
 describe("Integration Demo Server API", () => {
   const demoServer = new IntegrationDemoServer();
   let port: number;
+  let authToken: string;
 
   beforeAll(async () => {
+    process.env.AUTH_DEV_MODE = "true";
     port = await demoServer.listen(0, "127.0.0.1");
+
+    const loginRes = await fetch(`http://127.0.0.1:${port}/api/auth/dev-login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role: "Executive" }),
+    });
+    const loginData = (await loginRes.json()) as { token: string };
+    authToken = loginData.token;
   });
 
   afterAll(async () => {
+    delete process.env.AUTH_DEV_MODE;
     await demoServer.close();
   });
 
@@ -32,6 +43,7 @@ describe("Integration Demo Server API", () => {
   it("tests live adapter connections honestly via POST /api/connections/test", async () => {
     const res = await fetch(`http://127.0.0.1:${port}/api/connections/test`, {
       method: "POST",
+      headers: { Authorization: `Bearer ${authToken}` },
     });
     expect(res.status).toBe(200);
     const data = (await res.json()) as Array<{ systemId: string; state: string }>;
@@ -39,7 +51,9 @@ describe("Integration Demo Server API", () => {
   });
 
   it("serves CSV templates on GET /api/ingestion/templates", async () => {
-    const res = await fetch(`http://127.0.0.1:${port}/api/ingestion/templates`);
+    const res = await fetch(`http://127.0.0.1:${port}/api/ingestion/templates`, {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
     expect(res.status).toBe(200);
     const data = (await res.json()) as string[];
     expect(data).toContain("customers");
@@ -49,7 +63,10 @@ describe("Integration Demo Server API", () => {
   it("handles CSV validation preview on POST /api/ingestion/preview", async () => {
     const res = await fetch(`http://127.0.0.1:${port}/api/ingestion/preview`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
       body: JSON.stringify({ entityType: "customers" }),
     });
     expect(res.status).toBe(200);
@@ -59,14 +76,18 @@ describe("Integration Demo Server API", () => {
   });
 
   it("serves transfers list on GET /api/transfers", async () => {
-    const res = await fetch(`http://127.0.0.1:${port}/api/transfers`);
+    const res = await fetch(`http://127.0.0.1:${port}/api/transfers`, {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
     expect(res.status).toBe(200);
     const data = (await res.json()) as unknown[];
     expect(data.length).toBeGreaterThan(0);
   });
 
   it("serves mapping definitions on GET /api/mapping/samples", async () => {
-    const res = await fetch(`http://127.0.0.1:${port}/api/mapping/samples`);
+    const res = await fetch(`http://127.0.0.1:${port}/api/mapping/samples`, {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
     expect(res.status).toBe(200);
     const data = (await res.json()) as unknown[];
     expect(data.length).toBeGreaterThan(0);
@@ -75,6 +96,7 @@ describe("Integration Demo Server API", () => {
   it("handles simulated deal won trigger on POST /api/sync/deal-won", async () => {
     const res = await fetch(`http://127.0.0.1:${port}/api/sync/deal-won`, {
       method: "POST",
+      headers: { Authorization: `Bearer ${authToken}` },
     });
     expect(res.status).toBe(200);
     const data = (await res.json()) as { project: unknown; customer: unknown };
@@ -92,10 +114,12 @@ describe("Integration Demo Server API", () => {
     const largePayload = JSON.stringify({ data: "x".repeat(2.5 * 1024 * 1024) });
     const res = await fetch(`http://127.0.0.1:${port}/api/ingestion/preview`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
       body: largePayload,
     });
     expect(res.status).toBe(413);
   });
 });
-

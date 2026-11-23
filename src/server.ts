@@ -21,11 +21,14 @@ import { IngestionEntityType } from "./ingestion/types";
 import { renderDashboardHtml } from "./dashboard/html";
 import { AppRole, IAuthProvider } from "./auth/types";
 import { DevAuthProvider } from "./auth/provider";
+import { DatabaseMigrator } from "./db/migrator";
 import {
   assertProductionAuthSafety,
   clearSessionCookie,
   createAuthMiddleware,
   csrfProtection,
+  requireAuth,
+  requireRole,
   setSessionCookie,
 } from "./auth/middleware";
 
@@ -165,7 +168,7 @@ export class IntegrationDemoServer {
       }
     });
 
-    this.app.post("/api/connections/test", async (_req: Request, res: Response, next: NextFunction) => {
+    this.app.post("/api/connections/test", requireRole("Admin", "Executive"), async (_req: Request, res: Response, next: NextFunction) => {
       try {
         const results = await this.health.testAllConnections();
         res.json(results);
@@ -175,11 +178,11 @@ export class IntegrationDemoServer {
     });
 
     // CSV Ingestion Templates
-    this.app.get("/api/ingestion/templates", (_req: Request, res: Response) => {
+    this.app.get("/api/ingestion/templates", requireAuth, (_req: Request, res: Response) => {
       res.json(Object.keys(CSV_TEMPLATES));
     });
 
-    this.app.get("/api/ingestion/template/:type", (req: Request, res: Response) => {
+    this.app.get("/api/ingestion/template/:type", requireAuth, (req: Request, res: Response) => {
       const type = req.params.type as string;
       const template = CSV_TEMPLATES[type];
       if (!template) {
@@ -191,113 +194,137 @@ export class IntegrationDemoServer {
     });
 
     // CSV Ingestion: Preview Validation
-    this.app.post("/api/ingestion/preview", (req: Request, res: Response, next: NextFunction) => {
-      try {
-        const body = (req.body ?? {}) as Record<string, unknown>;
-        const entityType = (body.entityType as IngestionEntityType) || "customers";
-        const csvContent = (body.csvContent as string) || CSV_TEMPLATES[entityType] || "";
-        const report = this.registry.previewValidation(entityType, csvContent, "IMPORTED_CSV");
-        res.json(report);
-      } catch (err) {
-        next(err);
+    this.app.post(
+      "/api/ingestion/preview",
+      requireRole("Admin", "Executive", "Sales Lead", "Project Manager", "Finance"),
+      (req: Request, res: Response, next: NextFunction) => {
+        try {
+          const body = (req.body ?? {}) as Record<string, unknown>;
+          const entityType = (body.entityType as IngestionEntityType) || "customers";
+          const csvContent = (body.csvContent as string) || CSV_TEMPLATES[entityType] || "";
+          const report = this.registry.previewValidation(entityType, csvContent, "IMPORTED_CSV");
+          res.json(report);
+        } catch (err) {
+          next(err);
+        }
       }
-    });
+    );
 
     // CSV Ingestion: Execute Import
-    this.app.post("/api/ingestion/import", (req: Request, res: Response, next: NextFunction) => {
-      try {
-        const body = (req.body ?? {}) as Record<string, unknown>;
-        const entityType = (body.entityType as IngestionEntityType) || "customers";
-        const csvContent = (body.csvContent as string) || CSV_TEMPLATES[entityType] || "";
-        const dryRun = Boolean(body.dryRun);
-        const result = this.registry.executeImport(
-          entityType,
-          csvContent,
-          { dryRun, onConflict: "reject" },
-          "IMPORTED_CSV",
-        );
-        res.json(result);
-      } catch (err) {
-        next(err);
+    this.app.post(
+      "/api/ingestion/import",
+      requireRole("Admin", "Executive"),
+      (req: Request, res: Response, next: NextFunction) => {
+        try {
+          const body = (req.body ?? {}) as Record<string, unknown>;
+          const entityType = (body.entityType as IngestionEntityType) || "customers";
+          const csvContent = (body.csvContent as string) || CSV_TEMPLATES[entityType] || "";
+          const dryRun = Boolean(body.dryRun);
+          const result = this.registry.executeImport(
+            entityType,
+            csvContent,
+            { dryRun, onConflict: "reject" },
+            "IMPORTED_CSV",
+          );
+          res.json(result);
+        } catch (err) {
+          next(err);
+        }
       }
-    });
+    );
 
     // Canonical Registry Record Counts
-    this.app.get("/api/ingestion/registry/counts", (_req: Request, res: Response) => {
+    this.app.get("/api/ingestion/registry/counts", requireAuth, (_req: Request, res: Response) => {
       const counts = this.registry.getCounts();
       res.json(counts);
     });
 
     // Controlled 8-Step Pipeline
-    this.app.post("/api/pipeline/run", (req: Request, res: Response, next: NextFunction) => {
-      try {
-        const body = (req.body ?? {}) as Record<string, unknown>;
-        const entityType = (body.entityType as IngestionEntityType) || "customers";
-        const payload = (body.payload as string) || CSV_TEMPLATES[entityType] || "";
-        const dryRun = Boolean(body.dryRun);
-        const result = this.pipeline.execute(entityType, payload, { dryRun, onConflict: "reject" });
-        res.json(result);
-      } catch (err) {
-        next(err);
+    this.app.post(
+      "/api/pipeline/run",
+      requireRole("Admin", "Executive"),
+      (req: Request, res: Response, next: NextFunction) => {
+        try {
+          const body = (req.body ?? {}) as Record<string, unknown>;
+          const entityType = (body.entityType as IngestionEntityType) || "customers";
+          const payload = (body.payload as string) || CSV_TEMPLATES[entityType] || "";
+          const dryRun = Boolean(body.dryRun);
+          const result = this.pipeline.execute(entityType, payload, { dryRun, onConflict: "reject" });
+          res.json(result);
+        } catch (err) {
+          next(err);
+        }
       }
-    });
+    );
 
     // Audit Logs
-    this.app.get("/api/audit/logs", (_req: Request, res: Response) => {
+    this.app.get("/api/audit/logs", requireRole("Admin", "Executive", "Finance"), (_req: Request, res: Response) => {
       const logs = this.registry.getAuditLog();
       res.json(logs);
     });
 
     // Data Mapping Definitions
-    this.app.get("/api/mapping/samples", (_req: Request, res: Response) => {
+    this.app.get("/api/mapping/samples", requireAuth, (_req: Request, res: Response) => {
       const mappings = DataMappingService.getMappingDefinitions();
       res.json(mappings);
     });
 
     // Transfer Monitor Routes
-    this.app.get("/api/transfers", (_req: Request, res: Response) => {
+    this.app.get("/api/transfers", requireAuth, (_req: Request, res: Response) => {
       const transfers = this.transfer.getTransfers();
       res.json(transfers);
     });
 
-    this.app.get("/api/transfers/stats", (_req: Request, res: Response) => {
+    this.app.get("/api/transfers/stats", requireAuth, (_req: Request, res: Response) => {
       const stats = this.transfer.getStats();
       res.json(stats);
     });
 
-    this.app.post("/api/sync/deal-won", async (_req: Request, res: Response, next: NextFunction) => {
-      try {
-        const result = await this.transfer.triggerDealWonSync();
-        res.json(result);
-      } catch (err) {
-        next(err);
+    this.app.post(
+      "/api/sync/deal-won",
+      requireRole("Admin", "Executive", "Sales Lead"),
+      async (_req: Request, res: Response, next: NextFunction) => {
+        try {
+          const result = await this.transfer.triggerDealWonSync();
+          res.json(result);
+        } catch (err) {
+          next(err);
+        }
       }
-    });
+    );
 
-    this.app.post("/api/sync/milestone", async (_req: Request, res: Response, next: NextFunction) => {
-      try {
-        const result = await this.transfer.triggerMilestoneSync();
-        res.json(result);
-      } catch (err) {
-        next(err);
+    this.app.post(
+      "/api/sync/milestone",
+      requireRole("Admin", "Executive", "Project Manager"),
+      async (_req: Request, res: Response, next: NextFunction) => {
+        try {
+          const result = await this.transfer.triggerMilestoneSync();
+          res.json(result);
+        } catch (err) {
+          next(err);
+        }
       }
-    });
+    );
 
-    this.app.post("/api/sync/payment", async (_req: Request, res: Response, next: NextFunction) => {
-      try {
-        const result = await this.transfer.triggerPaymentSync();
-        res.json(result);
-      } catch (err) {
-        next(err);
+    this.app.post(
+      "/api/sync/payment",
+      requireRole("Admin", "Executive", "Finance"),
+      async (_req: Request, res: Response, next: NextFunction) => {
+        try {
+          const result = await this.transfer.triggerPaymentSync();
+          res.json(result);
+        } catch (err) {
+          next(err);
+        }
       }
-    });
+    );
 
-    this.app.post("/api/sync/fault", (_req: Request, res: Response) => {
+    this.app.post("/api/sync/fault", requireRole("Admin"), (_req: Request, res: Response) => {
       const result = this.transfer.simulateFaultAndAutoRetry();
       res.json(result);
     });
 
-    this.app.post("/api/ping/:systemId", (req: Request, res: Response) => {
+    this.app.post("/api/ping/:systemId", requireAuth, (req: Request, res: Response) => {
       const systemId = req.params.systemId;
       const latencyMs = Math.floor(25 + Math.random() * 35);
       res.json({ systemId, status: "ok", latencyMs, pingedAt: new Date().toISOString() });
@@ -319,6 +346,8 @@ export class IntegrationDemoServer {
   }
 
   public async init(): Promise<void> {
+    const migrator = new DatabaseMigrator();
+    await migrator.runMigrations();
     await this.registry.syncFromDatabase();
     await this.transfer.syncFromDatabase();
   }
