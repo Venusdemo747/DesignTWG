@@ -29,6 +29,12 @@
 | `POST` | `/api/auth/logout` | Public Allowlist | Unauthenticated / All | No |
 | `GET` | `/api/auth/me` | Public Allowlist | Unauthenticated / All | No |
 | `POST` | `/api/connections/test` | Guarded | `Admin`, `Executive` | Yes |
+| `GET` | `/api/discovery/baseline` | Guarded | `Admin`, `Executive` | Yes |
+| `GET` | `/api/metrics` | Guarded | All Authenticated Roles | No |
+| `GET` | `/api/exceptions` | Guarded | `Admin`, `Executive`, `Sales Lead`, `Project Manager`, `Finance` | No |
+| `GET` | `/api/exceptions/:id` | Guarded | `Admin`, `Executive`, `Sales Lead`, `Project Manager`, `Finance` | No |
+| `POST` | `/api/exceptions/:id/transition` | Guarded | `Admin`, `Executive`, `Sales Lead`, `Project Manager`, `Finance` | Yes |
+| `POST` | `/api/exceptions/run-detectors` | Guarded | `Admin`, `Executive`, `Sales Lead`, `Project Manager` | Yes |
 | `GET` | `/api/ingestion/templates` | Guarded | `Admin`, `Executive`, `Sales Lead`, `Project Manager`, `Designer`, `Finance`, `Viewer` | No |
 | `GET` | `/api/ingestion/template/:type` | Guarded | `Admin`, `Executive`, `Sales Lead`, `Project Manager`, `Designer`, `Finance`, `Viewer` | No |
 | `POST` | `/api/ingestion/preview` | Guarded | `Admin`, `Executive`, `Sales Lead`, `Project Manager`, `Finance` | Yes |

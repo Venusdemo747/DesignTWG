@@ -44,6 +44,10 @@ export class CanonicalDataRegistry {
     this.seedInitialSyntheticData();
   }
 
+  public get repository(): IEntityRepository {
+    return this.repo;
+  }
+
   public async syncFromDatabase(): Promise<void> {
     try {
       const [customers, contacts, deals, projects, milestones, documents, invoices] = await Promise.all([

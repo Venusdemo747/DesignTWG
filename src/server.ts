@@ -24,6 +24,8 @@ import { DevAuthProvider } from "./auth/provider";
 import { DatabaseMigrator } from "./db/migrator";
 import { DiscoveryBaselineService } from "./discovery";
 import { SuccessMetricsStore } from "./metrics";
+import { ExceptionEngine } from "./exceptions/engine";
+import { ExceptionFilterOptions, ExceptionStatus } from "./exceptions/types";
 import {
   assertProductionAuthSafety,
   clearSessionCookie,
@@ -77,8 +79,11 @@ export class IntegrationDemoServer {
     this.mapper,
   );
 
+  public readonly exceptionEngine: ExceptionEngine;
+
   constructor(authProvider?: IAuthProvider) {
     this.authProvider = authProvider || new DevAuthProvider();
+    this.exceptionEngine = new ExceptionEngine(this.registry.repository);
     this.app = express();
     this.setupMiddleware();
     this.setupRoutes();
@@ -210,6 +215,89 @@ export class IntegrationDemoServer {
       const metricsStore = new SuccessMetricsStore();
       res.json(metricsStore.getAllMetrics());
     });
+
+    // Sections 2 & 3: Exception Engine & Inbox Routes (S01, O02, Data Quality)
+    this.app.get(
+      "/api/exceptions",
+      requireRole("Admin", "Executive", "Sales Lead", "Project Manager", "Finance"),
+      async (req: Request, res: Response, next: NextFunction) => {
+        try {
+          const query = req.query as Record<string, string>;
+          const filters: ExceptionFilterOptions = {
+            category: query.category as any,
+            type: query.type as any,
+            severity: query.severity as any,
+            status: query.status as any,
+            ownerEmail: query.ownerEmail,
+            sourceSystem: query.sourceSystem,
+            limit: query.limit ? Number(query.limit) : undefined,
+            offset: query.offset ? Number(query.offset) : undefined,
+          };
+          const list = await this.exceptionEngine.listExceptions(filters);
+          res.json(list);
+        } catch (err) {
+          next(err);
+        }
+      }
+    );
+
+    this.app.get(
+      "/api/exceptions/:id",
+      requireRole("Admin", "Executive", "Sales Lead", "Project Manager", "Finance"),
+      async (req: Request, res: Response, next: NextFunction) => {
+        try {
+          const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+          const exc = await this.exceptionEngine.getExceptionById(id);
+          if (!exc) {
+            res.status(404).json({ error: "Exception not found" });
+            return;
+          }
+          const lifecycleEvents = await this.exceptionEngine.getLifecycleEvents(exc.id);
+          res.json({ exception: exc, lifecycleEvents });
+        } catch (err) {
+          next(err);
+        }
+      }
+    );
+
+    this.app.post(
+      "/api/exceptions/:id/transition",
+      requireRole("Admin", "Executive", "Sales Lead", "Project Manager", "Finance"),
+      async (req: Request, res: Response, next: NextFunction) => {
+        try {
+          const body = req.body as { toStatus: ExceptionStatus; reason?: string };
+          if (!body || !body.toStatus) {
+            res.status(400).json({ error: "Missing required 'toStatus' parameter" });
+            return;
+          }
+          const user = req.user!;
+          const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+          const updated = await this.exceptionEngine.transitionException({
+            exceptionId: id,
+            toStatus: body.toStatus,
+            actorId: user.id,
+            actorRole: user.role,
+            reason: body.reason,
+          });
+          res.json({ success: true, exception: updated });
+        } catch (err) {
+          next(err);
+        }
+      }
+    );
+
+    this.app.post(
+      "/api/exceptions/run-detectors",
+      requireRole("Admin", "Executive", "Sales Lead", "Project Manager"),
+      async (_req: Request, res: Response, next: NextFunction) => {
+        try {
+          const summary = await this.exceptionEngine.runAllDetectors();
+          res.json(summary);
+        } catch (err) {
+          next(err);
+        }
+      }
+    );
 
     // CSV Ingestion Templates
     this.app.get("/api/ingestion/templates", requireAuth, (_req: Request, res: Response) => {

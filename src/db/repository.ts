@@ -11,6 +11,12 @@ import {
   RecordOrigin,
 } from "../canonical/types";
 import { IngestionEntityType } from "../ingestion/types";
+import {
+  ExceptionRecord,
+  ExceptionFilterOptions,
+  ExceptionLifecycleEvent,
+  ExceptionStatus,
+} from "../exceptions/types";
 
 export interface DbUser {
   id: string;
@@ -157,6 +163,34 @@ export interface IEntityRepository {
   // Transfers
   saveTransfer(event: DbTransferEvent): Promise<void>;
   getTransfers(limit?: number): Promise<DbTransferEvent[]>;
+
+  // Exceptions & Lifecycle Events (Milestone 2)
+  saveException(exception: ExceptionRecord): Promise<void>;
+  getExceptionById(id: string): Promise<ExceptionRecord | null>;
+  getExceptionByDedupHash(dedupHash: string): Promise<ExceptionRecord | null>;
+  listExceptions(options?: ExceptionFilterOptions): Promise<ExceptionRecord[]>;
+  transitionExceptionStatus(params: {
+    exceptionId: string;
+    toStatus: ExceptionStatus;
+    actorId: string;
+    actorRole: string;
+    reason?: string;
+  }): Promise<ExceptionRecord>;
+  getExceptionLifecycleEvents(exceptionId: string): Promise<ExceptionLifecycleEvent[]>;
+}
+
+function toIsoDateString(val: unknown): string {
+  if (val instanceof Date) {
+    return val.toISOString();
+  }
+  if (typeof val === "string") {
+    const parsed = Date.parse(val);
+    if (!isNaN(parsed)) {
+      return new Date(parsed).toISOString();
+    }
+    return val;
+  }
+  return new Date().toISOString();
 }
 
 export class PostgresEntityRepository implements IEntityRepository {
@@ -219,8 +253,8 @@ export class PostgresEntityRepository implements IEntityRepository {
       currency: r.currency as string,
       taxNumber: (r.tax_number as string) || undefined,
       billingAddress: r.billing_address_json ? JSON.parse(r.billing_address_json as string) : undefined,
-      createdAt: (r.created_at as Date | string).toString(),
-      updatedAt: (r.updated_at as Date | string).toString(),
+      createdAt: toIsoDateString(r.created_at),
+      updatedAt: toIsoDateString(r.updated_at),
     };
   }
 
@@ -239,8 +273,8 @@ export class PostgresEntityRepository implements IEntityRepository {
       currency: r.currency as string,
       taxNumber: (r.tax_number as string) || undefined,
       billingAddress: r.billing_address_json ? JSON.parse(r.billing_address_json as string) : undefined,
-      createdAt: (r.created_at as Date | string).toString(),
-      updatedAt: (r.updated_at as Date | string).toString(),
+      createdAt: toIsoDateString(r.created_at),
+      updatedAt: toIsoDateString(r.updated_at),
     }));
   }
 
@@ -290,7 +324,7 @@ export class PostgresEntityRepository implements IEntityRepository {
       phone: (r.phone as string) || undefined,
       title: (r.title as string) || undefined,
       role: r.role as CanonicalContact["role"],
-      createdAt: (r.created_at as Date | string).toString(),
+      createdAt: toIsoDateString(r.created_at),
     }));
   }
 
@@ -352,8 +386,8 @@ export class PostgresEntityRepository implements IEntityRepository {
       probabilityPercentage: Number(r.probability_percentage),
       scopeSummary: (r.scope_summary as string) || undefined,
       architecturalType: r.architectural_type as CanonicalDeal["architecturalType"],
-      createdAt: (r.created_at as Date | string).toString(),
-      updatedAt: (r.updated_at as Date | string).toString(),
+      createdAt: toIsoDateString(r.created_at),
+      updatedAt: toIsoDateString(r.updated_at),
     }));
   }
 
@@ -414,8 +448,8 @@ export class PostgresEntityRepository implements IEntityRepository {
       startDate: r.start_date as string,
       targetCompletionDate: (r.target_completion_date as string) || undefined,
       sharePointDossierPath: (r.sharepoint_dossier_path as string) || undefined,
-      createdAt: (r.created_at as Date | string).toString(),
-      updatedAt: (r.updated_at as Date | string).toString(),
+      createdAt: toIsoDateString(r.created_at),
+      updatedAt: toIsoDateString(r.updated_at),
     }));
   }
 
@@ -519,7 +553,7 @@ export class PostgresEntityRepository implements IEntityRepository {
       sharePointFolderCategory: r.sharepoint_folder_category as CanonicalDocument["sharePointFolderCategory"],
       accessPermissionScope: r.access_permission_scope as CanonicalDocument["accessPermissionScope"],
       lastModifiedBy: (r.last_modified_by as string) || undefined,
-      lastModifiedAt: (r.last_modified_at as Date | string).toString(),
+      lastModifiedAt: toIsoDateString(r.last_modified_at),
     }));
   }
 
@@ -662,7 +696,7 @@ export class PostgresEntityRepository implements IEntityRepository {
       role: r.role as string,
       passwordHash: (r.password_hash as string) || undefined,
       isActive: Boolean(r.is_active),
-      createdAt: (r.created_at as Date | string).toString(),
+      createdAt: toIsoDateString(r.created_at),
     };
   }
 
@@ -677,7 +711,7 @@ export class PostgresEntityRepository implements IEntityRepository {
       role: r.role as string,
       passwordHash: (r.password_hash as string) || undefined,
       isActive: Boolean(r.is_active),
-      createdAt: (r.created_at as Date | string).toString(),
+      createdAt: toIsoDateString(r.created_at),
     };
   }
 
@@ -705,15 +739,15 @@ export class PostgresEntityRepository implements IEntityRepository {
       sessionTokenHash: r.session_token_hash as string,
       userId: r.user_id as string,
       role: r.role as string,
-      expiresAt: (r.expires_at as Date | string).toString(),
-      createdAt: (r.created_at as Date | string).toString(),
+      expiresAt: toIsoDateString(r.expires_at),
+      createdAt: toIsoDateString(r.created_at),
       user: {
         id: r.user_id as string,
         email: r.email as string,
         fullName: r.full_name as string,
         role: r.role as string,
         isActive: Boolean(r.is_active),
-        createdAt: (r.user_created_at as Date | string).toString(),
+        createdAt: toIsoDateString(r.user_created_at),
       },
     };
   }
@@ -802,7 +836,7 @@ export class PostgresEntityRepository implements IEntityRepository {
     );
     return res.rows.map((r) => ({
       id: r.id as string,
-      timestamp: (r.timestamp as Date | string).toString(),
+      timestamp: toIsoDateString(r.timestamp),
       actorId: r.actor_id as string,
       actorRole: r.actor_role as string,
       action: r.action as string,
@@ -836,7 +870,7 @@ export class PostgresEntityRepository implements IEntityRepository {
       e.status,
       e.latencyMs,
       e.details || null,
-      e.timestamp,
+      toIsoDateString(e.timestamp),
     ]);
   }
 
@@ -854,7 +888,245 @@ export class PostgresEntityRepository implements IEntityRepository {
       status: r.status as DbTransferEvent["status"],
       latencyMs: Number(r.latency_ms),
       details: (r.details as string) || undefined,
-      timestamp: (r.timestamp as Date | string).toString(),
+      timestamp: toIsoDateString(r.timestamp),
     }));
+  }
+
+  // Exceptions & Lifecycle Events (Milestone 2)
+  public async saveException(e: ExceptionRecord): Promise<void> {
+    const sql = `
+      INSERT INTO exceptions (
+        id, dedup_hash, category, type, severity, source_system, source_record_id,
+        record_label, title, description, evidence_json, owner_name, owner_email,
+        status, detected_count, first_detected_at, last_detected_at, resolved_at,
+        dismissed_reason, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+      ON CONFLICT (id) DO UPDATE SET
+        severity = EXCLUDED.severity,
+        title = EXCLUDED.title,
+        description = EXCLUDED.description,
+        evidence_json = EXCLUDED.evidence_json,
+        owner_name = EXCLUDED.owner_name,
+        owner_email = EXCLUDED.owner_email,
+        status = EXCLUDED.status,
+        detected_count = exceptions.detected_count + 1,
+        last_detected_at = CURRENT_TIMESTAMP,
+        resolved_at = EXCLUDED.resolved_at,
+        dismissed_reason = EXCLUDED.dismissed_reason,
+        updated_at = CURRENT_TIMESTAMP;
+    `;
+    await this.db.query(sql, [
+      e.id,
+      e.dedupHash,
+      e.category,
+      e.type,
+      e.severity,
+      e.sourceSystem,
+      e.sourceRecordId,
+      e.recordLabel,
+      e.title,
+      e.description,
+      JSON.stringify(e.evidence),
+      e.ownerName || null,
+      e.ownerEmail || null,
+      e.status,
+      e.detectedCount || 1,
+      toIsoDateString(e.firstDetectedAt),
+      toIsoDateString(e.lastDetectedAt),
+      e.resolvedAt ? toIsoDateString(e.resolvedAt) : null,
+      e.dismissedReason || null,
+      toIsoDateString(e.createdAt),
+      toIsoDateString(e.updatedAt),
+    ]);
+  }
+
+  public async getExceptionById(id: string): Promise<ExceptionRecord | null> {
+    const res = await this.db.query<Record<string, unknown>>(
+      "SELECT * FROM exceptions WHERE id = $1 LIMIT 1;",
+      [id]
+    );
+    if (res.rows.length === 0) return null;
+    return this.mapDbRowToException(res.rows[0]);
+  }
+
+  public async getExceptionByDedupHash(dedupHash: string): Promise<ExceptionRecord | null> {
+    const res = await this.db.query<Record<string, unknown>>(
+      "SELECT * FROM exceptions WHERE dedup_hash = $1 LIMIT 1;",
+      [dedupHash]
+    );
+    if (res.rows.length === 0) return null;
+    return this.mapDbRowToException(res.rows[0]);
+  }
+
+  public async listExceptions(options: ExceptionFilterOptions = {}): Promise<ExceptionRecord[]> {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    let pIdx = 1;
+
+    if (options.category) {
+      conditions.push(`category = $${pIdx++}`);
+      params.push(options.category);
+    }
+    if (options.type) {
+      conditions.push(`type = $${pIdx++}`);
+      params.push(options.type);
+    }
+    if (options.severity) {
+      conditions.push(`severity = $${pIdx++}`);
+      params.push(options.severity);
+    }
+    if (options.status) {
+      conditions.push(`status = $${pIdx++}`);
+      params.push(options.status);
+    }
+    if (options.ownerEmail) {
+      conditions.push(`owner_email = $${pIdx++}`);
+      params.push(options.ownerEmail);
+    }
+    if (options.sourceSystem) {
+      conditions.push(`source_system = $${pIdx++}`);
+      params.push(options.sourceSystem);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const limit = options.limit || 100;
+    const offset = options.offset || 0;
+
+    const sql = `
+      SELECT * FROM exceptions
+      ${whereClause}
+      ORDER BY
+        CASE severity
+          WHEN 'CRITICAL' THEN 1
+          WHEN 'HIGH' THEN 2
+          WHEN 'MEDIUM' THEN 3
+          WHEN 'LOW' THEN 4
+          ELSE 5
+        END ASC,
+        last_detected_at DESC
+      LIMIT $${pIdx++} OFFSET $${pIdx++};
+    `;
+    params.push(limit, offset);
+
+    const res = await this.db.query<Record<string, unknown>>(sql, params);
+    return res.rows.map((r) => this.mapDbRowToException(r));
+  }
+
+  public async transitionExceptionStatus(params: {
+    exceptionId: string;
+    toStatus: ExceptionStatus;
+    actorId: string;
+    actorRole: string;
+    reason?: string;
+  }): Promise<ExceptionRecord> {
+    const existing = await this.getExceptionById(params.exceptionId);
+    if (!existing) {
+      throw new Error(`Exception not found: ${params.exceptionId}`);
+    }
+
+    const fromStatus = existing.status;
+    const resolvedAt = params.toStatus === "RESOLVED" ? new Date().toISOString() : null;
+    const dismissedReason = params.toStatus === "DISMISSED" ? params.reason || "Dismissed by user" : null;
+
+    // 1. Update exception state
+    const updateSql = `
+      UPDATE exceptions
+      SET status = $1, resolved_at = $2, dismissed_reason = $3, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $4;
+    `;
+    await this.db.query(updateSql, [params.toStatus, resolvedAt, dismissedReason, params.exceptionId]);
+
+    // 2. Record immutable lifecycle event
+    const eventId = `evt_life_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
+    const insertEventSql = `
+      INSERT INTO exception_lifecycle_events (id, exception_id, from_status, to_status, actor_id, actor_role, reason, timestamp)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP);
+    `;
+    await this.db.query(insertEventSql, [
+      eventId,
+      params.exceptionId,
+      fromStatus,
+      params.toStatus,
+      params.actorId,
+      params.actorRole,
+      params.reason || null,
+    ]);
+
+    // 3. Record audit trail entry
+    await this.appendAudit({
+      id: `audit_exc_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`,
+      timestamp: new Date().toISOString(),
+      actorId: params.actorId,
+      actorRole: params.actorRole,
+      action: `EXCEPTION_${params.toStatus}`,
+      resourceType: "EXCEPTION",
+      resourceId: params.exceptionId,
+      diffJson: JSON.stringify({
+        fromStatus,
+        toStatus: params.toStatus,
+        reason: params.reason || null,
+      }),
+      status: "SUCCESS",
+    });
+
+    const updated = await this.getExceptionById(params.exceptionId);
+    return updated!;
+  }
+
+  public async getExceptionLifecycleEvents(exceptionId: string): Promise<ExceptionLifecycleEvent[]> {
+    const res = await this.db.query<Record<string, unknown>>(
+      "SELECT * FROM exception_lifecycle_events WHERE exception_id = $1 ORDER BY timestamp ASC;",
+      [exceptionId]
+    );
+    return res.rows.map((r) => ({
+      id: r.id as string,
+      exceptionId: r.exception_id as string,
+      fromStatus: r.from_status as ExceptionStatus,
+      toStatus: r.to_status as ExceptionStatus,
+      actorId: r.actor_id as string,
+      actorRole: r.actor_role as string,
+      reason: (r.reason as string) || undefined,
+      timestamp: toIsoDateString(r.timestamp),
+    }));
+  }
+
+  private mapDbRowToException(r: Record<string, unknown>): ExceptionRecord {
+    let evidence: ExceptionRecord["evidence"];
+    try {
+      evidence = typeof r.evidence_json === "string" ? JSON.parse(r.evidence_json) : (r.evidence_json as ExceptionRecord["evidence"]);
+    } catch {
+      evidence = {
+        sourceSystem: (r.source_system as string) || "",
+        sourceRecordId: (r.source_record_id as string) || "",
+        ruleId: (r.type as string) || "",
+        ruleDescription: (r.title as string) || "",
+        evaluatedAt: new Date().toISOString(),
+        facts: {},
+      };
+    }
+
+    return {
+      id: r.id as string,
+      dedupHash: r.dedup_hash as string,
+      category: r.category as ExceptionRecord["category"],
+      type: r.type as ExceptionRecord["type"],
+      severity: r.severity as ExceptionRecord["severity"],
+      sourceSystem: r.source_system as string,
+      sourceRecordId: r.source_record_id as string,
+      recordLabel: r.record_label as string,
+      title: r.title as string,
+      description: r.description as string,
+      evidence,
+      ownerName: (r.owner_name as string) || undefined,
+      ownerEmail: (r.owner_email as string) || undefined,
+      status: r.status as ExceptionRecord["status"],
+      detectedCount: Number(r.detected_count || 1),
+      firstDetectedAt: toIsoDateString(r.first_detected_at),
+      lastDetectedAt: toIsoDateString(r.last_detected_at),
+      resolvedAt: r.resolved_at ? toIsoDateString(r.resolved_at) : undefined,
+      dismissedReason: (r.dismissed_reason as string) || undefined,
+      createdAt: toIsoDateString(r.created_at),
+      updatedAt: toIsoDateString(r.updated_at),
+    };
   }
 }

@@ -306,6 +306,9 @@ export function renderDashboardHtml(): string {
     <button class="tab-btn" onclick="switchTab('tab-transfers')">
       <span>⚡</span> Transfer Monitor
     </button>
+    <button class="tab-btn" onclick="switchTab('tab-exceptions')">
+      <span>⚠️</span> Exception Inbox (S01/O02)
+    </button>
   </nav>
 
   <main>
@@ -493,6 +496,92 @@ export function renderDashboardHtml(): string {
         </table>
       </div>
     </div>
+
+    <!-- TAB 7: EXCEPTION INBOX (S01 / O02 / DATA QUALITY) -->
+    <div id="tab-exceptions" class="tab-pane">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
+        <div>
+          <h2 style="font-size:1.4rem; font-weight:800; color:#F8FAFC;">Deterministic Exception Inbox</h2>
+          <p style="font-size:0.85rem; color:#94A3B8;">Human-in-the-loop exception surveillance: S01 stalled opportunities, O02 milestone delays & data-quality alerts.</p>
+        </div>
+        <div style="display:flex; gap:0.75rem;">
+          <button class="btn-primary" onclick="runExceptionScans()" id="btn-run-detectors">
+            <span>🔍</span> Run Deterministic Detectors
+          </button>
+        </div>
+      </div>
+
+      <!-- Exception Scorecards -->
+      <div class="scorecard" style="grid-template-columns: repeat(4, 1fr); margin-bottom:1.5rem;">
+        <div class="score-box" style="border-color: rgba(239, 68, 68, 0.4);">
+          <div class="score-num" id="exc-critical-count" style="color:#EF4444;">0</div>
+          <div class="score-label">Critical Exceptions</div>
+        </div>
+        <div class="score-box" style="border-color: rgba(245, 158, 11, 0.4);">
+          <div class="score-num" id="exc-high-count" style="color:#F59E0B;">0</div>
+          <div class="score-label">High Severity</div>
+        </div>
+        <div class="score-box" style="border-color: rgba(56, 189, 248, 0.4);">
+          <div class="score-num" id="exc-s01-count" style="color:#38BDF8;">0</div>
+          <div class="score-label">S01 Sales Stalled</div>
+        </div>
+        <div class="score-box" style="border-color: rgba(168, 85, 247, 0.4);">
+          <div class="score-num" id="exc-o02-count" style="color:#A855F7;">0</div>
+          <div class="score-label">O02 Milestone Risks</div>
+        </div>
+      </div>
+
+      <!-- Filter Controls -->
+      <div style="display:flex; gap:1rem; margin-bottom:1rem; flex-wrap:wrap; background:rgba(15, 23, 42, 0.6); padding:0.85rem; border-radius:10px; border:1px solid var(--border);">
+        <div style="flex:1; min-width:140px;">
+          <label style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase; font-weight:700; display:block; margin-bottom:0.25rem;">Category</label>
+          <select id="filter-exc-category" onchange="loadExceptions()" style="padding:0.4rem; height:auto;">
+            <option value="">All Categories</option>
+            <option value="BUSINESS">Business Exceptions (S01 / O02)</option>
+            <option value="DATA_QUALITY">Data Quality</option>
+          </select>
+        </div>
+        <div style="flex:1; min-width:140px;">
+          <label style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase; font-weight:700; display:block; margin-bottom:0.25rem;">Status</label>
+          <select id="filter-exc-status" onchange="loadExceptions()" style="padding:0.4rem; height:auto;">
+            <option value="">All Statuses</option>
+            <option value="NEW" selected>NEW</option>
+            <option value="ACKNOWLEDGED">ACKNOWLEDGED</option>
+            <option value="RESOLVED">RESOLVED</option>
+            <option value="DISMISSED">DISMISSED</option>
+          </select>
+        </div>
+        <div style="flex:1; min-width:140px;">
+          <label style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase; font-weight:700; display:block; margin-bottom:0.25rem;">Severity</label>
+          <select id="filter-exc-severity" onchange="loadExceptions()" style="padding:0.4rem; height:auto;">
+            <option value="">All Severities</option>
+            <option value="CRITICAL">Critical</option>
+            <option value="HIGH">High</option>
+            <option value="MEDIUM">Medium</option>
+            <option value="LOW">Low</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Severity</th>
+              <th>Status</th>
+              <th>Type & Title</th>
+              <th>Source Record</th>
+              <th>Evidence & Details</th>
+              <th>Detected Count</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="exceptions-tbody">
+            <tr><td colspan="7" style="text-align:center; color:var(--text-muted);">Loading exceptions...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   </main>
 
   <script>
@@ -527,6 +616,7 @@ export function renderDashboardHtml(): string {
         renderTransfersTable(transfers);
         renderCountsTable(counts);
         renderAuditTable(audits);
+        await loadExceptions();
       } catch (err) {
         console.error("Failed to load dashboard data:", err);
       }
@@ -759,6 +849,131 @@ export function renderDashboardHtml(): string {
           <td style="font-size:0.75rem; color:#94A3B8;">\${a.sanitizedSummary}</td>
         </tr>
       \`).join('');
+    }
+
+    async function loadExceptions() {
+      try {
+        const cat = document.getElementById('filter-exc-category')?.value || '';
+        const status = document.getElementById('filter-exc-status')?.value || '';
+        const sev = document.getElementById('filter-exc-severity')?.value || '';
+
+        const params = new URLSearchParams();
+        if (cat) params.append('category', cat);
+        if (status) params.append('status', status);
+        if (sev) params.append('severity', sev);
+
+        const res = await fetch('/api/exceptions?' + params.toString());
+        if (!res.ok) return;
+        const exceptions = await res.json();
+
+        // Update scorecards
+        const allRes = await fetch('/api/exceptions');
+        if (allRes.ok) {
+          const allExcs = await allRes.json();
+          const crit = allExcs.filter(e => e.severity === 'CRITICAL' && e.status !== 'RESOLVED' && e.status !== 'DISMISSED').length;
+          const high = allExcs.filter(e => e.severity === 'HIGH' && e.status !== 'RESOLVED' && e.status !== 'DISMISSED').length;
+          const s01 = allExcs.filter(e => e.type.startsWith('S01_') && e.status !== 'RESOLVED' && e.status !== 'DISMISSED').length;
+          const o02 = allExcs.filter(e => e.type.startsWith('O02_') && e.status !== 'RESOLVED' && e.status !== 'DISMISSED').length;
+
+          document.getElementById('exc-critical-count').innerText = crit;
+          document.getElementById('exc-high-count').innerText = high;
+          document.getElementById('exc-s01-count').innerText = s01;
+          document.getElementById('exc-o02-count').innerText = o02;
+        }
+
+        renderExceptionsTable(exceptions);
+      } catch (err) {
+        console.error("Failed to load exceptions:", err);
+      }
+    }
+
+    function renderExceptionsTable(exceptions) {
+      const tbody = document.getElementById('exceptions-tbody');
+      if (!tbody) return;
+
+      if (!exceptions || exceptions.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#94A3B8; padding:2rem;">🎉 No active exceptions match the selected filters.</td></tr>';
+        return;
+      }
+
+      const sevColors = {
+        CRITICAL: '#EF4444',
+        HIGH: '#F59E0B',
+        MEDIUM: '#38BDF8',
+        LOW: '#94A3B8'
+      };
+
+      const statusColors = {
+        NEW: '#38BDF8',
+        ACKNOWLEDGED: '#F59E0B',
+        RESOLVED: '#10B981',
+        DISMISSED: '#64748B'
+      };
+
+      tbody.innerHTML = exceptions.map(e => \`
+        <tr>
+          <td><span style="display:inline-block; padding:0.2rem 0.5rem; border-radius:6px; font-weight:700; font-size:0.7rem; background:rgba(0,0,0,0.4); border:1px solid \${sevColors[e.severity] || '#FFF'}; color:\${sevColors[e.severity] || '#FFF'};">\${e.severity}</span></td>
+          <td><span style="display:inline-block; padding:0.2rem 0.5rem; border-radius:6px; font-weight:700; font-size:0.7rem; background:rgba(0,0,0,0.4); border:1px solid \${statusColors[e.status] || '#FFF'}; color:\${statusColors[e.status] || '#FFF'};">\${e.status}</span></td>
+          <td><b>\${e.title}</b><div style="font-size:0.72rem; color:#94A3B8; font-family:var(--font-mono);">\${e.type}</div></td>
+          <td style="font-family:var(--font-mono); font-size:0.78rem;">\${e.sourceSystem} &bull; \${e.recordLabel}</td>
+          <td>
+            <div style="font-size:0.78rem; color:#E2E8F0; margin-bottom:0.2rem;">\${e.description}</div>
+            <div style="font-size:0.7rem; color:#38BDF8; font-family:var(--font-mono);">Rule: \${e.evidence.ruleId}</div>
+          </td>
+          <td style="font-size:0.75rem; color:#94A3B8; font-family:var(--font-mono);">\${e.detectedCount}x</td>
+          <td>
+            <div style="display:flex; gap:0.4rem;">
+              \${e.status === 'NEW' ? \`<button onclick="transitionException('\${e.id}', 'ACKNOWLEDGED')" style="background:#0284C7; color:#FFF; border:none; padding:0.3rem 0.6rem; border-radius:4px; font-size:0.7rem; cursor:pointer;">Acknowledge</button>\` : ''}
+              \${e.status !== 'RESOLVED' ? \`<button onclick="transitionException('\${e.id}', 'RESOLVED')" style="background:#059669; color:#FFF; border:none; padding:0.3rem 0.6rem; border-radius:4px; font-size:0.7rem; cursor:pointer;">Resolve</button>\` : ''}
+              \${e.status !== 'DISMISSED' ? \`<button onclick="transitionException('\${e.id}', 'DISMISSED')" style="background:#475569; color:#FFF; border:none; padding:0.3rem 0.6rem; border-radius:4px; font-size:0.7rem; cursor:pointer;">Dismiss</button>\` : ''}
+            </div>
+          </td>
+        </tr>
+      \`).join('');
+    }
+
+    async function runExceptionScans() {
+      const btn = document.getElementById('btn-run-detectors');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerText = 'Scanning Data...';
+      }
+      try {
+        const res = await fetch('/api/exceptions/run-detectors', { method: 'POST' });
+        const summary = await res.json();
+        alert(\`Detection Cycle Finished!\\nEvaluated \${summary.totalEvaluated.deals} deals, \${summary.totalEvaluated.milestones} milestones.\\nDetected: \${summary.totalDetected} issues (\${summary.newCount} new, \${summary.reopenedCount} reopened, \${summary.updatedCount} active).\`);
+        await loadExceptions();
+      } catch (err) {
+        alert('Failed to run detector cycle: ' + err.message);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '<span>🔍</span> Run Deterministic Detectors';
+        }
+      }
+    }
+
+    async function transitionException(id, toStatus) {
+      let reason = undefined;
+      if (toStatus === 'DISMISSED') {
+        reason = prompt('Please enter reason for dismissing this exception:');
+        if (!reason) return;
+      }
+      try {
+        const res = await fetch(\`/api/exceptions/\${id}/transition\`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ toStatus, reason })
+        });
+        if (res.ok) {
+          await loadExceptions();
+        } else {
+          const err = await res.json();
+          alert('Transition failed: ' + (err.error || res.statusText));
+        }
+      } catch (err) {
+        alert('Transition error: ' + err.message);
+      }
     }
 
     // Init

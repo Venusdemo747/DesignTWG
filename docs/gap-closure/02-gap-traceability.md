@@ -11,7 +11,7 @@
 
 | Gap ID | Business Gap (from MD) | Agent Owner | Milestone | Status | Evidence (Tests / Commit / Artifact) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **S01** | Qualified opportunities lack recorded owners, next actions, follow-up dates; leads become inactive without automated flagging | Sales Growth Agent | **M2** (Detection) + **M3** (Drafting & Approval) | Not started | Scheduled for M2 deterministic detector |
+| **S01** | Qualified opportunities lack recorded owners, next actions, follow-up dates; leads become inactive without automated flagging | Sales Growth Agent | **M2** (Detection) + **M3** (Drafting & Approval) | **M2 DETECTION VERIFIED** | `tests/s01-detector.test.ts` (S01-1, S01-2, S01-3, S01-4), `tests/business-days.test.ts`, `tests/exceptions-lifecycle.test.ts`, `tests/exceptions-api.test.ts` |
 | **S02** | Prospecting across hospitality/commercial franchise sectors is unsystematic; target account research is manual | Target Account Research Agent | **M7** | Not started | Scheduled for M7 |
 | **S03** | Proposal production requires repetitive manual assembly of scope, fees, timeline from past projects without precedent retrieval | Proposal & Pricing Agent | **M6** | Not started | Scheduled for M6 Precedent Index |
 | **S04** | Win/loss patterns and stalled-deal causes are not systematically analyzed to improve conversion | Pipeline Analytics Agent | **M7** | Not started | Scheduled for M7 |
@@ -26,7 +26,7 @@
 | Gap ID | Business Gap (from MD) | Agent Owner | Milestone | Status | Evidence (Tests / Commit / Artifact) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **O01** | D1–D5 design phases lack uniform stage-gate verification; deliverable completion and sign-off tracking varies across PMs | Stage-Gate Validator | **M6** | Not started | Scheduled for M6 D1–D5 tracker |
-| **O02** | Project delays, scope creep, and milestone slippage are identified reactively rather than flagged proactively | Project Delivery Agent | **M2** (Detection) + **M3** (Escalation) | Not started | Scheduled for M2 O02 detector |
+| **O02** | Project delays, scope creep, and milestone slippage are identified reactively rather than flagged proactively | Project Delivery Agent | **M2** (Detection) + **M3** (Escalation) | **M2 DETECTION VERIFIED** | `tests/o02-detector.test.ts` (O02-1 overdue, O02-2 at-risk 3-business-day lead time), `tests/business-days.test.ts`, `tests/exceptions-lifecycle.test.ts`, `tests/exceptions-api.test.ts` |
 | **O03** | Project documents, specifications, and client communications are fragmented across folders without unified search | Knowledge & RAG Agent | **M9** | Not started | Scheduled for M9 SharePoint RAG |
 | **O04** | Cross-referencing drawing sets, specifications, and equipment schedules for consistency requires tedious manual review | Drawing & Spec QA Agent | **M9** | Not started | Scheduled for M9 QA verification |
 | **O05** | Staff allocation across concurrent projects is managed via disconnected spreadsheets without skill or deadline visibility | Resource Allocator | **M8** | Not started | Scheduled for M8 Capacity Balancer |
