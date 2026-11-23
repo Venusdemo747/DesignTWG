@@ -128,7 +128,7 @@ describe("Database Migrations, Async Repository & Append-Only Audit", () => {
     expect(log?.diffJson).toContain("[REDACTED_CARD]");
   });
 
-  it("ENFORCES APPEND-ONLY INVARIANT: blocks UPDATE and DELETE on audit_log via database trigger", async () => {
+  it("ENFORCES APPEND-ONLY INVARIANT: blocks UPDATE, DELETE, and TRUNCATE on audit_log via database trigger", async () => {
     // Attempting UPDATE on audit_log must throw SQL Exception
     await expect(
       dbClient.query("UPDATE audit_log SET action = 'TAMPERED' WHERE id = 'audit-001';")
@@ -137,6 +137,11 @@ describe("Database Migrations, Async Repository & Append-Only Audit", () => {
     // Attempting DELETE on audit_log must throw SQL Exception
     await expect(
       dbClient.query("DELETE FROM audit_log WHERE id = 'audit-001';")
+    ).rejects.toThrow(/SECURITY VIOLATION.*audit_log.*strictly append-only/);
+
+    // Attempting TRUNCATE on audit_log must throw SQL Exception
+    await expect(
+      dbClient.query("TRUNCATE TABLE audit_log;")
     ).rejects.toThrow(/SECURITY VIOLATION.*audit_log.*strictly append-only/);
   });
 });

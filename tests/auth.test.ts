@@ -103,4 +103,77 @@ describe("Authentication, Session Security & Production Safety Gates", () => {
       process.env.AUTH_DEV_MODE = origDevAuth;
     }
   });
+
+  it("ENFORCES LOGOUT INVALIDATION: removes session from database upon logout", async () => {
+    const session = await authProvider.loginDev("Sales Lead");
+    const tokenHash = hashToken(session.rawToken);
+
+    // Verify session exists in DB
+    const beforeLogout = await repo.getSessionByHash(tokenHash);
+    expect(beforeLogout).not.toBeNull();
+
+    // Call logout endpoint
+    const logoutRes = await fetch(`http://127.0.0.1:${port}/api/auth/logout`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${session.rawToken}` },
+    });
+    expect(logoutRes.status).toBe(200);
+
+    // Verify session is deleted from DB
+    const afterLogout = await repo.getSessionByHash(tokenHash);
+    expect(afterLogout).toBeNull();
+  });
+
+  it("ENFORCES SESSION EXPIRY & IDLE TIMEOUT: rejects expired or stale sessions", async () => {
+    const user = await repo.getUserByEmail("irwin@designtwg.com");
+    expect(user).not.toBeNull();
+
+    // Expired session
+    const expiredToken = "twg_dev_expired_token_12345";
+    const expiredHash = hashToken(expiredToken);
+    await repo.createSession({
+      id: "sess-expired-01",
+      sessionTokenHash: expiredHash,
+      userId: user!.id,
+      role: user!.role,
+      expiresAt: new Date(Date.now() - 60000).toISOString(), // 1 minute in the past
+      createdAt: new Date(Date.now() - 120000).toISOString(),
+    });
+
+    const mockReq = {
+      headers: { authorization: `Bearer ${expiredToken}` },
+      cookies: {},
+    } as unknown as import("express").Request;
+
+    const authResult = await authProvider.authenticate(mockReq);
+    expect(authResult).toBeNull();
+  });
+
+  it("ENFORCES LOGIN RATE LIMITING & LOCKOUT: locks out after 5 consecutive failures", async () => {
+    authProvider.clearFailedAttempts("Sales Lead");
+
+    // Trigger 5 failed attempts
+    for (let i = 0; i < 5; i++) {
+      authProvider.recordFailedLogin("Sales Lead");
+    }
+
+    expect(authProvider.isLockedOut("Sales Lead")).toBe(true);
+
+    await expect(
+      authProvider.loginDev("Sales Lead")
+    ).rejects.toThrow(/temporarily locked out/);
+
+    authProvider.clearFailedAttempts("Sales Lead");
+  });
+
+  it("SUPPORTS SESSION ROTATION: rotates token and invalidates old credentials on role privilege change", async () => {
+    const initialSession = await authProvider.loginDev("Project Manager");
+    const user = await repo.getUserByEmail("nameeta@designtwg.com");
+    expect(user).not.toBeNull();
+
+    const rotatedSession = await authProvider.rotateSessionOnRoleChange(user!.id, "Executive");
+
+    expect(rotatedSession.rawToken).not.toBe(initialSession.rawToken);
+    expect(rotatedSession.user.role).toBe("Executive");
+  });
 });

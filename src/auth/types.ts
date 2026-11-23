@@ -37,6 +37,7 @@ export interface IAuthProvider {
   readonly name: string;
   authenticate(req: Request): Promise<AuthenticatedUser | null>;
   loginDev(role: AppRole): Promise<AuthSession>;
+  logout(rawToken: string): Promise<void>;
 }
 
 declare global {

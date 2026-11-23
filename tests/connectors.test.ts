@@ -55,7 +55,7 @@ describe("Simulated Connectors", () => {
     expect(completed?.completionPercentage).toBe(100);
   });
 
-  it("QuickBooks Online creates customers, milestone invoices, and records payments", async () => {
+  it("QuickBooks Online creates customers, milestone invoices, and records payments with approved record", async () => {
     const qbo = new QuickBooksConnector();
     const health = await qbo.checkHealth();
     expect(health.id).toBe("quickbooks");
@@ -64,18 +64,31 @@ describe("Simulated Connectors", () => {
     const customers = await qbo.getCustomers();
     expect(customers.length).toBeGreaterThan(0);
 
+    // Enforces Read-Only Invariant: calling without approvalRecordId throws error
+    await expect(
+      qbo.createMilestoneInvoice({
+        customerName: "Nordic Designs Inc",
+        customerEmail: "finance@nordic.com",
+        projectId: "PRJ-TWG-799",
+        milestoneName: "Phase 1: Concept Schematic",
+        amount: 50000,
+      })
+    ).rejects.toThrow();
+
+    // With verified human approval record, write succeeds
     const invoice = await qbo.createMilestoneInvoice({
       customerName: "Nordic Designs Inc",
       customerEmail: "finance@nordic.com",
       projectId: "PRJ-TWG-799",
       milestoneName: "Phase 1: Concept Schematic",
       amount: 50000,
+      approvalRecordId: "APPROVAL-REC-2026-001",
     });
     expect(invoice.id).toMatch(/^QBO-INV-/);
     expect(invoice.status).toBe("Draft");
     expect(invoice.totalAmount).toBe(50000);
 
-    const paid = await qbo.markInvoicePaid(invoice.id);
+    const paid = await qbo.markInvoicePaid(invoice.id, "APPROVAL-REC-2026-001");
     expect(paid?.status).toBe("Paid");
   });
 

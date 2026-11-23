@@ -56,7 +56,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_resource ON audit_log(resource_type, re
 CREATE OR REPLACE FUNCTION prevent_audit_log_modification()
 RETURNS TRIGGER AS $$
 BEGIN
-  RAISE EXCEPTION 'SECURITY VIOLATION: audit_log table is strictly append-only. UPDATE and DELETE operations are forbidden.';
+  RAISE EXCEPTION 'SECURITY VIOLATION: audit_log table is strictly append-only. UPDATE, DELETE, and TRUNCATE operations are forbidden.';
 END;
 $$ LANGUAGE plpgsql;
 
@@ -64,6 +64,12 @@ DROP TRIGGER IF EXISTS trg_audit_log_immutable ON audit_log;
 CREATE TRIGGER trg_audit_log_immutable
 BEFORE UPDATE OR DELETE ON audit_log
 FOR EACH ROW
+EXECUTE FUNCTION prevent_audit_log_modification();
+
+DROP TRIGGER IF EXISTS trg_audit_log_immutable_truncate ON audit_log;
+CREATE TRIGGER trg_audit_log_immutable_truncate
+BEFORE TRUNCATE ON audit_log
+FOR EACH STATEMENT
 EXECUTE FUNCTION prevent_audit_log_modification();
 
 -- 5. Data-Driven Approver Routing Rules

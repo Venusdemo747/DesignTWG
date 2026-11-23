@@ -226,23 +226,45 @@ export class TransferMonitor {
       payload: { dealId: deal.id, projectId: project.id, amount: deal.amount },
     });
 
-    // 2. Provision Customer in QBO
-    const customer = await this.qbo.findOrCreateCustomer(deal.accountName, deal.contactEmail);
-    this.addTransfer({
-      id: `TRX-${Date.now()}-2`,
-      timestamp: new Date().toISOString(),
-      trigger: "Event: Project Provisioned",
-      sourceSystem: "zoho-crm",
-      targetSystem: "quickbooks",
-      entityType: "Deal -> QBO Customer Record",
-      recordId: deal.id,
-      recordLabel: deal.accountName,
-      status: "SUCCESS",
-      durationMs: 38,
-      retryCount: 0,
-      details: `Verified billing entity ${customer.displayName} in QuickBooks Online.`,
-      payload: { customerId: customer.id, email: customer.email },
-    });
+    // 2. Provision or Draft Customer in QBO (Enforces QuickBooks Read-Only Invariant)
+    const existingCustomer = await this.qbo.findCustomerByName(deal.accountName);
+    let customer: unknown;
+    if (existingCustomer) {
+      customer = existingCustomer;
+      this.addTransfer({
+        id: `TRX-${Date.now()}-2`,
+        timestamp: new Date().toISOString(),
+        trigger: "Event: Project Provisioned",
+        sourceSystem: "zoho-crm",
+        targetSystem: "quickbooks",
+        entityType: "Deal -> QBO Existing Customer Verified",
+        recordId: deal.id,
+        recordLabel: deal.accountName,
+        status: "SUCCESS",
+        durationMs: 38,
+        retryCount: 0,
+        details: `Verified existing billing entity ${existingCustomer.displayName} in QuickBooks Online (Read-Only).`,
+        payload: { customerId: existingCustomer.id, email: existingCustomer.email, readOnlyVerified: true },
+      });
+    } else {
+      const draft = this.qbo.draftCustomerCreationRequest(deal.accountName, deal.contactEmail);
+      customer = draft;
+      this.addTransfer({
+        id: `TRX-${Date.now()}-2`,
+        timestamp: new Date().toISOString(),
+        trigger: "Event: Project Provisioned",
+        sourceSystem: "zoho-crm",
+        targetSystem: "quickbooks",
+        entityType: "Deal -> QBO Customer Creation Request (Draft Pending Approval)",
+        recordId: deal.id,
+        recordLabel: deal.accountName,
+        status: "SUCCESS",
+        durationMs: 38,
+        retryCount: 0,
+        details: `Customer creation request drafted for ${deal.accountName}. Routed to human approval queue in compliance with QuickBooks read-only invariant.`,
+        payload: { draftId: draft.draftId, status: draft.status, readOnlyEnforced: true },
+      });
+    }
 
     // 3. Provision SharePoint Dossier
     const spFolder = await this.m365.provisionSharePointProjectDossier(project.projectName, deal.accountName);
@@ -314,8 +336,8 @@ export class TransferMonitor {
     targetMilestone.completionPercentage = 100;
     targetMilestone.invoiceTriggered = true;
 
-    // Create invoice in QBO
-    const invoice = await this.qbo.createMilestoneInvoice({
+    // Draft invoice for QBO (Enforces QuickBooks Read-Only Invariant: Draft only until approved)
+    const invoiceDraft = this.qbo.draftMilestoneInvoiceRequest({
       customerName: parentProject.clientAccount,
       customerEmail: "billing@client.com",
       projectId: parentProject.id,
@@ -329,37 +351,49 @@ export class TransferMonitor {
       trigger: "Zoho Projects Milestone Status: Completed",
       sourceSystem: "zoho-projects",
       targetSystem: "quickbooks",
-      entityType: "Milestone -> QBO Invoice",
+      entityType: "Milestone -> QBO Invoice Draft (Pending Approval)",
       recordId: targetMilestone.id,
       recordLabel: targetMilestone.name,
       status: "SUCCESS",
       durationMs: 74,
       retryCount: 0,
-      details: `Generated Invoice ${invoice.docNumber} ($${invoice.totalAmount.toLocaleString()}) in QuickBooks Online.`,
+      details: `Generated Milestone Invoice Draft for $${invoiceDraft.amount.toLocaleString()} in compliance with QuickBooks read-only invariant.`,
       payload: {
         milestoneId: targetMilestone.id,
-        invoiceId: invoice.id,
-        amount: invoice.totalAmount,
+        draftId: invoiceDraft.draftId,
+        amount: invoiceDraft.amount,
+        readOnlyEnforced: true,
       },
     });
 
     // Alert in Teams
     const alert = await this.m365.postTeamsAlert({
       channel: "Billing & Financial Operations",
-      title: `📄 Invoice Generated: ${invoice.docNumber}`,
-      body: `Milestone '${targetMilestone.name}' completed on ${parentProject.projectName}. Draft invoice created for $${invoice.totalAmount.toLocaleString()}.`,
+      title: `📄 Milestone Completed & Invoice Drafted`,
+      body: `Milestone '${targetMilestone.name}' completed on ${parentProject.projectName}. Draft invoice created for $${invoiceDraft.amount.toLocaleString()} awaiting human sign-off.`,
       urgency: "info",
-      metadata: { invoiceId: invoice.id, projectId: parentProject.id },
+      metadata: { draftId: invoiceDraft.draftId, projectId: parentProject.id },
     });
 
-    return { invoice, teamsAlert: alert };
+    return { invoice: invoiceDraft, teamsAlert: alert };
   }
 
-  public async triggerPaymentSync(): Promise<{ invoice: unknown; alert: unknown }> {
+  public async triggerPaymentSync(invoiceId?: string, approvalRecordId?: string): Promise<{ invoice: unknown; alert: unknown }> {
     const invoices = await this.qbo.getInvoices();
-    const sentInvoice = invoices.find((i) => i.status === "Sent") || invoices[0];
+    const sentInvoice = (invoiceId ? invoices.find((i) => i.id === invoiceId) : null) || invoices.find((i) => i.status === "Sent") || invoices[0];
 
-    const updated = await this.qbo.markInvoicePaid(sentInvoice.id);
+    // Inbound webhook simulation: QuickBooks is read-only; records incoming payment confirmation
+    let updated: unknown;
+    if (approvalRecordId) {
+      updated = await this.qbo.markInvoicePaid(sentInvoice.id, approvalRecordId);
+    } else {
+      updated = {
+        ...sentInvoice,
+        status: "Paid",
+        paymentWebhookVerified: true,
+        readOnlyEnforced: true,
+      };
+    }
 
     this.addTransfer({
       id: `TRX-${Date.now()}-6`,

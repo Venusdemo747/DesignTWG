@@ -22,6 +22,8 @@ import { renderDashboardHtml } from "./dashboard/html";
 import { AppRole, IAuthProvider } from "./auth/types";
 import { DevAuthProvider } from "./auth/provider";
 import { DatabaseMigrator } from "./db/migrator";
+import { DiscoveryBaselineService } from "./discovery";
+import { SuccessMetricsStore } from "./metrics";
 import {
   assertProductionAuthSafety,
   clearSessionCookie,
@@ -143,9 +145,24 @@ export class IntegrationDemoServer {
       }
     });
 
-    this.app.post("/api/auth/logout", (_req: Request, res: Response) => {
+    this.app.post("/api/auth/logout", async (req: Request, res: Response) => {
+      let token: string | undefined;
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        token = authHeader.slice(7).trim();
+      }
+      if (!token && req.cookies && req.cookies.twg_session) {
+        token = req.cookies.twg_session as string;
+      }
+      if (token) {
+        try {
+          await this.authProvider.logout(token);
+        } catch {
+          // ignore cleanup errors
+        }
+      }
       clearSessionCookie(res);
-      res.json({ success: true });
+      res.json({ success: true, message: "Logged out successfully" });
     });
 
     this.app.get("/api/auth/me", (req: Request, res: Response) => {
@@ -175,6 +192,23 @@ export class IntegrationDemoServer {
       } catch (err) {
         next(err);
       }
+    });
+
+    // Section 10: Discovery & Baseline Evaluation
+    this.app.get("/api/discovery/baseline", requireRole("Admin", "Executive"), async (_req: Request, res: Response, next: NextFunction) => {
+      try {
+        const service = new DiscoveryBaselineService(this.registry.repository);
+        const report = await service.evaluateDiscoveryQuestions();
+        res.json(report);
+      } catch (err) {
+        next(err);
+      }
+    });
+
+    // Section 9: Success Metrics Store
+    this.app.get("/api/metrics", requireAuth, (_req: Request, res: Response) => {
+      const metricsStore = new SuccessMetricsStore();
+      res.json(metricsStore.getAllMetrics());
     });
 
     // CSV Ingestion Templates

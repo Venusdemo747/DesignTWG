@@ -31,6 +31,38 @@ export interface QboInvoice {
   memo: string;
 }
 
+export class QuickBooksReadOnlyViolationError extends Error {
+  public readonly code = "QUICKBOOKS_READ_ONLY_VIOLATION";
+  constructor(operation: string) {
+    super(
+      `QUICKBOOKS_READ_ONLY_VIOLATION: Direct write operation '${operation}' to QuickBooks Online is strictly prohibited without a verified human approval record. (Rules.md Invariant 3)`
+    );
+    this.name = "QuickBooksReadOnlyViolationError";
+  }
+}
+
+export interface QboCustomerDraft {
+  draftId: string;
+  displayName: string;
+  companyName: string;
+  email: string;
+  status: "DRAFT_PENDING_APPROVAL";
+  readOnlyEnforced: true;
+  createdAt: string;
+}
+
+export interface QboInvoiceDraft {
+  draftId: string;
+  customerName: string;
+  customerEmail: string;
+  projectId: string;
+  milestoneName: string;
+  amount: number;
+  status: "DRAFT_PENDING_APPROVAL";
+  readOnlyEnforced: true;
+  createdAt: string;
+}
+
 export class QuickBooksConnector {
   private readonly customers: QboCustomer[] = [
     {
@@ -128,11 +160,19 @@ export class QuickBooksConnector {
     return [...this.invoices];
   }
 
-  public async findOrCreateCustomer(name: string, email: string): Promise<QboCustomer> {
-    const existing = this.customers.find(
+  public async findCustomerByName(name: string): Promise<QboCustomer | undefined> {
+    return this.customers.find(
       (c) => c.companyName.toLowerCase() === name.toLowerCase() || c.displayName.toLowerCase() === name.toLowerCase(),
     );
+  }
+
+  public async findOrCreateCustomer(name: string, email: string, approvalRecordId?: string): Promise<QboCustomer> {
+    const existing = await this.findCustomerByName(name);
     if (existing) return existing;
+
+    if (!approvalRecordId) {
+      throw new QuickBooksReadOnlyViolationError(`findOrCreateCustomer(${name})`);
+    }
 
     const newCust: QboCustomer = {
       id: `QBO-CUST-${Math.floor(503 + this.customers.length)}`,
@@ -146,14 +186,51 @@ export class QuickBooksConnector {
     return newCust;
   }
 
+  public draftCustomerCreationRequest(name: string, email: string): QboCustomerDraft {
+    return {
+      draftId: `DRAFT-QBO-CUST-${Date.now()}`,
+      displayName: name,
+      companyName: name,
+      email,
+      status: "DRAFT_PENDING_APPROVAL",
+      readOnlyEnforced: true,
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  public draftMilestoneInvoiceRequest(params: {
+    customerName: string;
+    customerEmail: string;
+    projectId: string;
+    milestoneName: string;
+    amount: number;
+  }): QboInvoiceDraft {
+    return {
+      draftId: `DRAFT-QBO-INV-${Date.now()}`,
+      customerName: params.customerName,
+      customerEmail: params.customerEmail,
+      projectId: params.projectId,
+      milestoneName: params.milestoneName,
+      amount: params.amount,
+      status: "DRAFT_PENDING_APPROVAL",
+      readOnlyEnforced: true,
+      createdAt: new Date().toISOString(),
+    };
+  }
+
   public async createMilestoneInvoice(params: {
     customerName: string;
     customerEmail: string;
     projectId: string;
     milestoneName: string;
     amount: number;
+    approvalRecordId?: string;
   }): Promise<QboInvoice> {
-    const customer = await this.findOrCreateCustomer(params.customerName, params.customerEmail);
+    if (!params.approvalRecordId) {
+      throw new QuickBooksReadOnlyViolationError(`createMilestoneInvoice for project ${params.projectId}`);
+    }
+
+    const customer = await this.findOrCreateCustomer(params.customerName, params.customerEmail, params.approvalRecordId);
     const invoiceNum = `TWG-INV-2026-${String(this.invoices.length + 90).padStart(3, "0")}`;
 
     const newInvoice: QboInvoice = {
@@ -166,7 +243,7 @@ export class QuickBooksConnector {
       status: "Draft",
       txnDate: new Date().toISOString().split("T")[0],
       dueDate: new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
-      memo: `Milestone billing: ${params.milestoneName} for project ${params.projectId}`,
+      memo: `Milestone billing: ${params.milestoneName} for project ${params.projectId} (Approval: ${params.approvalRecordId})`,
       lineItems: [
         {
           id: `LINE-${Date.now()}`,
@@ -183,7 +260,11 @@ export class QuickBooksConnector {
     return newInvoice;
   }
 
-  public async markInvoicePaid(invoiceId: string): Promise<QboInvoice | undefined> {
+  public async markInvoicePaid(invoiceId: string, approvalRecordId?: string): Promise<QboInvoice | undefined> {
+    if (!approvalRecordId) {
+      throw new QuickBooksReadOnlyViolationError(`markInvoicePaid(${invoiceId})`);
+    }
+
     const inv = this.invoices.find((i) => i.id === invoiceId);
     if (inv) {
       inv.status = "Paid";
