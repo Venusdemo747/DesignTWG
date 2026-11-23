@@ -19,10 +19,21 @@ import { ControlledTransferPipeline } from "./transfer/pipeline";
 import { CSV_TEMPLATES } from "./ingestion/templates";
 import { IngestionEntityType } from "./ingestion/types";
 import { renderDashboardHtml } from "./dashboard/html";
+import { AppRole, IAuthProvider } from "./auth/types";
+import { DevAuthProvider } from "./auth/provider";
+import {
+  assertProductionAuthSafety,
+  clearSessionCookie,
+  createAuthMiddleware,
+  csrfProtection,
+  setSessionCookie,
+} from "./auth/middleware";
 
 export class IntegrationDemoServer {
   public readonly app: express.Express;
   private server: http.Server | null = null;
+
+  public readonly authProvider: IAuthProvider;
 
   // Mock / Simulated connectors (for offline and demo simulation)
   public readonly crm = new ZohoCrmConnector();
@@ -61,13 +72,16 @@ export class IntegrationDemoServer {
     this.mapper,
   );
 
-  constructor() {
+  constructor(authProvider?: IAuthProvider) {
+    this.authProvider = authProvider || new DevAuthProvider();
     this.app = express();
     this.setupMiddleware();
     this.setupRoutes();
   }
 
   private setupMiddleware(): void {
+    assertProductionAuthSafety();
+
     // Security headers (Helmet) - configured to allow dashboard styles and font CDNs
     this.app.use(
       helmet({
@@ -80,7 +94,7 @@ export class IntegrationDemoServer {
     this.app.use((_req: Request, res: Response, next: NextFunction) => {
       res.setHeader("Access-Control-Allow-Origin", "*");
       res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, X-CSRF-Token");
       if (_req.method === "OPTIONS") {
         res.status(204).end();
         return;
@@ -103,9 +117,38 @@ export class IntegrationDemoServer {
     this.app.use(express.json({ limit: "2mb" }));
     this.app.use(express.urlencoded({ extended: true, limit: "2mb" }));
     this.app.use(cookieParser());
+
+    // Authentication & CSRF
+    this.app.use(createAuthMiddleware(this.authProvider));
+    this.app.use(csrfProtection);
   }
 
   private setupRoutes(): void {
+    // Auth Routes
+    this.app.post("/api/auth/dev-login", async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        if (process.env.NODE_ENV === "production" || process.env.AUTH_DEV_MODE !== "true") {
+          res.status(403).json({ error: "Dev login is disabled outside development environments" });
+          return;
+        }
+        const role = (req.body?.role as AppRole) || "Viewer";
+        const session = await this.authProvider.loginDev(role);
+        setSessionCookie(res, session.rawToken);
+        res.json({ success: true, user: session.user, token: session.rawToken });
+      } catch (err) {
+        next(err);
+      }
+    });
+
+    this.app.post("/api/auth/logout", (_req: Request, res: Response) => {
+      clearSessionCookie(res);
+      res.json({ success: true });
+    });
+
+    this.app.get("/api/auth/me", (req: Request, res: Response) => {
+      res.json({ user: req.user || null });
+    });
+
     // UI Routes
     this.app.get(["/", "/index.html"], (_req: Request, res: Response) => {
       res.setHeader("Content-Type", "text/html; charset=utf-8");
