@@ -1,0 +1,39 @@
+node_modules/
+dist/
+build/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+
+# Database files & local data
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+data/
+
+# Credentials and secrets
+*.pem
+*.key
+*.cert
+*.crt
+*.pfx
+credentials.json
+token.json
+tokens.json
+secrets.json
+*credentials*
+*token*.json
+*secret*.json
+
+# OS and IDE
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
