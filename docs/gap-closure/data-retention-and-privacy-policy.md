@@ -14,7 +14,7 @@
    - **Data Residency Standard:** All primary database storage (PostgreSQL), SharePoint file caches, and audit logs must reside within Canadian borders to comply with provincial privacy standards and commercial non-disclosure agreements.
 
 2. **Cross-Border LLM Ingestion Considerations:**
-   - LLM inference (Anthropic Claude Sonnet 5.5) may process requests across North American datacenters.
+   - LLM inference (Google Gemini) may process requests across North American datacenters unless a Canadian region (e.g. `northamerica-northeast1` Montreal or `northamerica-northeast2` Toronto) is provisioned via Vertex AI (ADR 008).
    - **Enforced Mitigation:** Strict client-side data minimization via `minimizeRecordForPrompt()`:
      - No personal phone numbers, bank details, or credit card numbers are ever passed in LLM system or user prompts.
      - Deals and projects are referenced by canonical identifiers and commercial titles only.

@@ -68,7 +68,7 @@
 
 | Decision Item | Chosen Standard & Rationale | Status |
 | :--- | :--- | :--- |
-| **Default LLM Model** | Claude Sonnet 5.5 (`claude-sonnet-5-5`), configurable via env; verified naming | Adopted for M3 |
+| **Default LLM Model** | Google Gemini (`gemini-2.5-pro` primary, `gemini-2.5-flash` fast), configurable via env (ADR 008) | Adopted for M3 |
 | **LLM Cost & Rate Caps** | Hard ceiling: $15.00/day, 30 calls/hr; per-agent token limits (CEO: 16k input) | Designed for M3/M5 |
 | **Teams Alerting Channel** | Workflows / Power Automate App webhook (Adaptive Cards v1.4/1.5); SMTP email fallback | Verified finding (legacy retired) |
 | **Executive Schedule & Timezone**| Monday 08:00 AM America/Toronto with DST-safe croner engine | Scheduled for M4 |

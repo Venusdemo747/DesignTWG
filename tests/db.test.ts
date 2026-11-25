@@ -144,4 +144,32 @@ describe("Database Migrations, Async Repository & Append-Only Audit", () => {
       dbClient.query("TRUNCATE TABLE audit_log;")
     ).rejects.toThrow(/SECURITY VIOLATION.*audit_log.*strictly append-only/);
   });
+
+  it("LEAST-PRIVILEGE ROLE ISOLATION: non-owner application role cannot drop triggers, disable triggers, or alter audit_log", async () => {
+    // 1. Create a non-superuser / non-owner application role matching scripts/init-postgres-roles.sql
+    await dbClient.query("CREATE ROLE twg_app_test WITH LOGIN;");
+    await dbClient.query("GRANT USAGE ON SCHEMA public TO twg_app_test;");
+    await dbClient.query("GRANT SELECT, INSERT ON audit_log TO twg_app_test;");
+
+    // 2. Switch session context to the least-privilege role
+    await dbClient.query("SET ROLE twg_app_test;");
+
+    // 3. Attempting DROP TRIGGER must be blocked (must be table owner)
+    await expect(
+      dbClient.query("DROP TRIGGER trg_audit_log_immutable ON audit_log;")
+    ).rejects.toThrow(/must be owner of (relation|table) audit_log/);
+
+    // 4. Attempting DISABLE TRIGGER must be blocked (must be table owner)
+    await expect(
+      dbClient.query("ALTER TABLE audit_log DISABLE TRIGGER ALL;")
+    ).rejects.toThrow(/must be owner of (relation|table) audit_log/);
+
+    // 5. Attempting DROP TABLE must be blocked (must be table owner)
+    await expect(
+      dbClient.query("DROP TABLE audit_log;")
+    ).rejects.toThrow(/must be owner of (relation|table) audit_log/);
+
+    // 6. Reset role back to superuser/owner
+    await dbClient.query("RESET ROLE;");
+  });
 });

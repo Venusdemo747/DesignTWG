@@ -32,10 +32,10 @@
 │  │  ┌─────────────────────────────┐  ┌───────────────────────────┐  │  │
 │  │  │ Deterministic Exception     │  │ Human-Supervised Agent    │  │  │
 │  │  │ Engine (Plain Code Rules)   │  │ Runtime & LLM Orchestrator│  │  │
-│  │  │ - S01 Inactivity Detector   │  │ - Claude Sonnet 5.5       │  │  │
+│  │  │ - S01 Inactivity Detector   │  │ - Google Gemini (ADR 008) │  │  │
 │  │  │ - O02 Milestone Risk Monitor│  │ - Configurable Token Caps │  │  │
 │  │  │ - Staleness & QA Checks     │  │ - Prompt Defense & Schema │  │  │
-│  │  └──────────────┬──────────────┘  │ - CEO Agent (12k budget)  │  │  │
+│  │  └──────────────┬──────────────┘  │ - CEO Agent (16k budget)  │  │  │
 │  │                 │                 └─────────────┬─────────────┘  │  │
 │  │                 ▼                               ▼                │  │
 │  │  ┌────────────────────────────────────────────────────────────┐  │  │
@@ -99,11 +99,11 @@
 ## 3. Specifications Addressing User Constraints
 
 ### 3.1 LLM Configuration & Token Budget
-- **Default Model:** `claude-sonnet-5-5` (Anthropic Claude Sonnet 5.5).
+- **Default Provider & Models (ADR 008):** Google Gemini (`gemini-2.5-pro` primary, `gemini-2.5-flash` fast), configurable via `.env`.
 - **Supported Provider Registry (`[VERIFY]` Verified):**
-  - Anthropic: `claude-sonnet-5-5` (default), `claude-3-5-sonnet-latest`, `claude-3-7-sonnet-latest`
-  - OpenAI: `gpt-4o`, `gpt-4o-mini`, `o3-mini`
-  - Google Gemini: `gemini-2.0-flash`, `gemini-1.5-pro`
+  - Google Gemini (Implemented Adapter): `gemini-2.5-pro` (default primary), `gemini-2.5-flash` (default fast), `gemini-1.5-pro`
+  - Anthropic (Interface defined; future adapter): `claude-3-5-sonnet-latest`, `claude-3-7-sonnet-latest`
+  - OpenAI (Interface defined; future adapter): `gpt-4o`, `gpt-4o-mini`, `o3-mini`
 - **Rate & Cost Limits:**
   - Hard limit of **30 calls/hour** and **$15.00/day** ceiling with automated circuit breaker.
   - **Configurable per-agent token budgets:**

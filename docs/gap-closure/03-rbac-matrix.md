@@ -57,3 +57,18 @@
 
 1. **Deny-by-Default:** An authorization guard is mounted on the router. Any route not present in `PUBLIC_ALLOWLIST` that does not declare role requirements is automatically rejected with HTTP 401/403.
 2. **Automated Route Guard Test:** A dedicated test dynamically inspects `app._router.stack`, checks all registered endpoints, and fails the test suite if any endpoint lacks an explicit auth/role guard.
+
+---
+
+## 4. Nomenclature & Framework Reconciliation (V5)
+
+- **Server Framework:** **Express 5 (`^5.3.0`)** is installed and running (`package.json`). Earlier conversational references mentioning Express 4 were informal; the runtime and route middleware leverage Express 5's native asynchronous error propagation and router handling.
+- **Canonical Role Names:** Code (`src/auth/types.ts`), database seed (`src/db/seed.ts`), tests (`tests/rbac.test.ts`), and documentation are unified around these 7 exact role identifiers:
+  1. `Executive`
+  2. `Sales Lead`
+  3. `Project Manager`
+  4. `Designer` (referred to conversationally as Design Staff)
+  5. `Finance` (referred to conversationally as Finance / Billing)
+  6. `Admin`
+  7. `Viewer` (read-only audit/analytics viewer)
+

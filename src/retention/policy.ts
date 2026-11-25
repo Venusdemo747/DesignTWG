@@ -85,7 +85,7 @@ export class DataRetentionPolicyManager {
 
   /**
    * Data-minimization utility for LLM Prompts (Section 8 Privacy Invariant)
-   * Strips client direct contact info, tax IDs, and billing credentials before sending to Claude.
+   * Strips client direct contact info, tax IDs, and billing credentials before sending to LLM (Google Gemini).
    */
   public minimizeRecordForPrompt(record: Record<string, unknown>): Record<string, unknown> {
     const sensitiveKeys = new Set([
